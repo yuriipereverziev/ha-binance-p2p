@@ -9,6 +9,7 @@ CONF_PAY_TYPES = "pay_types"
 CONF_SCAN_INTERVAL = "scan_interval"
 
 DEFAULT_SCAN_INTERVAL = 60  # seconds
+MIN_SCAN_INTERVAL = 60  # seconds - lower values risk rate-limiting/bans by Binance
 DEFAULT_TRADE_TYPE = "BUY"
 DEFAULT_ROWS = 10
 

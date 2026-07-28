@@ -33,7 +33,8 @@ You'll be asked for:
 - Fiat (e.g. `UAH`)
 - Trade type (`BUY` or `SELL`)
 - Payment methods (optional filter)
-- Update interval in seconds
+- Update interval in seconds (minimum 60s — lower values risk being
+  rate-limited or temporarily blocked by Binance)
 
 ## Example automation
 

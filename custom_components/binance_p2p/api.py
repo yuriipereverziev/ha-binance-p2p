@@ -13,6 +13,17 @@ _LOGGER = logging.getLogger(__name__)
 
 REQUEST_TIMEOUT = 15
 
+# Binance/Cloudflare tends to challenge or block requests that look like a
+# bare aiohttp client, so we present ourselves as a normal browser request.
+_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/124.0 Safari/537.36"
+    ),
+    "Content-Type": "application/json",
+    "Accept": "application/json",
+}
+
 
 class BinanceP2PError(Exception):
     """Raised when the Binance P2P endpoint cannot be reached or parsed."""
@@ -63,7 +74,7 @@ class BinanceP2PClient:
         try:
             async with asyncio.timeout(REQUEST_TIMEOUT):
                 async with self._session.post(
-                    BINANCE_P2P_URL, json=payload
+                    BINANCE_P2P_URL, json=payload, headers=_HEADERS
                 ) as resp:
                     if resp.status != 200:
                         raise BinanceP2PError(
@@ -74,6 +85,12 @@ class BinanceP2PClient:
             raise BinanceP2PError(f"Error connecting to Binance P2P: {err}") from err
         except TimeoutError as err:
             raise BinanceP2PError("Timeout connecting to Binance P2P") from err
+        except ValueError as err:
+            # Includes json.JSONDecodeError: Binance/Cloudflare sometimes
+            # answers with an HTML challenge page instead of JSON.
+            raise BinanceP2PError(
+                f"Invalid (non-JSON) response from Binance P2P: {err}"
+            ) from err
 
         if not data or not data.get("success", True) or "data" not in data:
             raise BinanceP2PError(f"Unexpected response payload: {data}")
@@ -96,7 +113,13 @@ class BinanceP2PClient:
         return {
             "price": float(adv.get("price", 0)),
             "min_limit": float(adv.get("minSingleTransAmount", 0)),
-            "max_limit": float(adv.get("maxSingleTransAmount", 0)),
+            # dynamicMaxSingleTransAmount reflects the max limited by the
+            # merchant's remaining surplus; fall back to the static limit
+            # if it's not present in the response.
+            "max_limit": float(
+                adv.get("dynamicMaxSingleTransAmount")
+                or adv.get("maxSingleTransAmount", 0)
+            ),
             "available_amount": float(adv.get("surplusAmount", 0) or adv.get("tradableQuantity", 0)),
             "merchant": advertiser.get("nickName", "unknown"),
             "merchant_rating": advertiser.get("monthFinishRate"),

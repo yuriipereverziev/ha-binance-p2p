@@ -1,6 +1,7 @@
 """Config flow for Binance P2P."""
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 import voluptuous as vol
@@ -18,8 +19,11 @@ from .const import (
     DEFAULT_SCAN_INTERVAL,
     DEFAULT_TRADE_TYPE,
     DOMAIN,
+    MIN_SCAN_INTERVAL,
     TRADE_TYPES,
 )
+
+_LOGGER = logging.getLogger(__name__)
 
 STEP_USER_SCHEMA = vol.Schema(
     {
@@ -28,7 +32,7 @@ STEP_USER_SCHEMA = vol.Schema(
         vol.Required(CONF_TRADE_TYPE, default=DEFAULT_TRADE_TYPE): vol.In(TRADE_TYPES),
         vol.Optional(CONF_PAY_TYPES, default=""): str,
         vol.Optional(CONF_SCAN_INTERVAL, default=DEFAULT_SCAN_INTERVAL): vol.All(
-            vol.Coerce(int), vol.Range(min=15)
+            vol.Coerce(int), vol.Range(min=MIN_SCAN_INTERVAL)
         ),
     }
 )
@@ -73,6 +77,9 @@ class BinanceP2PConfigFlow(ConfigFlow, domain=DOMAIN):
                 offers = await client.async_fetch_offers()
             except BinanceP2PError:
                 errors["base"] = "cannot_connect"
+            except Exception:  # noqa: BLE001
+                _LOGGER.exception("Unexpected error validating Binance P2P setup")
+                errors["base"] = "unknown"
             else:
                 if not offers:
                     errors["base"] = "no_offers"
@@ -118,7 +125,7 @@ class BinanceP2POptionsFlow(OptionsFlow):
         schema = vol.Schema(
             {
                 vol.Required(CONF_SCAN_INTERVAL, default=current): vol.All(
-                    vol.Coerce(int), vol.Range(min=15)
+                    vol.Coerce(int), vol.Range(min=MIN_SCAN_INTERVAL)
                 ),
             }
         )

@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
-from homeassistant.components.sensor import SensorEntity
+from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -43,6 +43,13 @@ class BinanceP2PBestPriceSensor(CoordinatorEntity[BinanceP2PCoordinator], Sensor
     _attr_has_entity_name = True
     _attr_name = "Best price"
     _attr_icon = "mdi:currency-usd"
+    # Note: HA only allows state_class="total" together with device_class
+    # MONETARY, and that doesn't semantically fit a fluctuating spot price
+    # (it's meant for cumulative totals like "cost today"). So we set the
+    # device class for currency formatting only, and leave state_class unset
+    # (no long-term statistics/energy-dashboard integration, just History).
+    _attr_device_class = SensorDeviceClass.MONETARY
+    _attr_suggested_display_precision = 2
 
     def __init__(self, coordinator: BinanceP2PCoordinator, entry: ConfigEntry) -> None:
         super().__init__(coordinator)
