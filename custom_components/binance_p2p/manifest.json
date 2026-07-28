@@ -1,0 +1,11 @@
+{
+  "domain": "binance_p2p",
+  "name": "Binance P2P",
+  "codeowners": ["yuriipereverziev"],
+  "config_flow": true,
+  "documentation": "https://github.com/yuriipereverziev/ha-binance-p2p",
+  "issue_tracker": "https://github.com/yuriipereverziev/ha-binance-p2p/issues",
+  "iot_class": "cloud_polling",
+  "requirements": [],
+  "version": "0.1.0"
+}

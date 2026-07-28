@@ -1,0 +1,34 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Binance P2P",
+        "description": "Set up tracking of the best Binance P2P offer for a given asset/fiat pair.",
+        "data": {
+          "asset": "Asset (e.g. USDT)",
+          "fiat": "Fiat currency (e.g. UAH)",
+          "trade_type": "Trade type",
+          "pay_types": "Payment methods (comma-separated, leave empty for any)",
+          "scan_interval": "Update interval (seconds)"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Could not fetch data from Binance P2P. Check the asset/fiat pair and your connection.",
+      "no_offers": "No offers found for this asset/fiat/trade type combination."
+    },
+    "abort": {
+      "already_configured": "This asset/fiat/trade type combination is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Binance P2P options",
+        "data": {
+          "scan_interval": "Update interval (seconds)"
+        }
+      }
+    }
+  }
+}
