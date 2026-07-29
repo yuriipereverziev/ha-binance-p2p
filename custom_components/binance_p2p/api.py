@@ -190,11 +190,17 @@ async def async_fetch_payment_methods(
     except ValueError as err:
         raise BinanceP2PError(f"Invalid payment methods response: {err}") from err
 
-    if not isinstance(data, list):
+    # The response is wrapped like the search endpoint's, not a bare list:
+    # {"code": "000000", "message": None, "data": [...], "success": True}.
+    if not isinstance(data, dict) or not data.get("success", True):
+        raise BinanceP2PError(f"Unexpected payment methods payload: {data}")
+
+    method_list = data.get("data")
+    if not isinstance(method_list, list):
         raise BinanceP2PError(f"Unexpected payment methods payload: {data}")
 
     methods: list[dict[str, str]] = []
-    for item in data:
+    for item in method_list:
         identifier = item.get("identifier")
         if not identifier:
             continue
