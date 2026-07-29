@@ -13,6 +13,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from .api import BinanceP2PClient, BinanceP2PError
 from .const import (
     CONF_ASSET,
+    CONF_CARD_TYPES,
     CONF_DESIRED_AMOUNT,
     CONF_FIAT,
     CONF_PAY_TYPES,
@@ -43,6 +44,7 @@ class BinanceP2PCoordinator(DataUpdateCoordinator[list[dict[str, Any]]]):
             fiat=entry.data[CONF_FIAT],
             trade_type=entry.data[CONF_TRADE_TYPE],
             pay_types=entry.data.get(CONF_PAY_TYPES, []),
+            card_types=entry.data.get(CONF_CARD_TYPES, []),
         )
 
         # Desired transaction amount, used by entities to pick the best

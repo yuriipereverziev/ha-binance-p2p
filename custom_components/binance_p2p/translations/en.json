@@ -13,9 +13,10 @@
       },
       "payment_methods": {
         "title": "Payment methods",
-        "description": "Optionally restrict offers to specific payment methods. Leave empty to allow any.",
+        "description": "Optionally restrict offers to specific payment methods, and separately to specific banks/cards for crediting. Both are optional and independent (AND) - leave either empty to not filter on it.",
         "data": {
-          "pay_types": "Payment methods"
+          "pay_types": "Payment methods",
+          "card_types": "Cards for crediting"
         }
       }
     },

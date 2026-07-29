@@ -6,6 +6,7 @@ CONF_ASSET = "asset"
 CONF_FIAT = "fiat"
 CONF_TRADE_TYPE = "trade_type"
 CONF_PAY_TYPES = "pay_types"
+CONF_CARD_TYPES = "card_types"
 CONF_SCAN_INTERVAL = "scan_interval"
 CONF_DESIRED_AMOUNT = "desired_amount"
 

@@ -13,6 +13,7 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from .api import BinanceP2PClient, BinanceP2PError, async_fetch_payment_methods
 from .const import (
     CONF_ASSET,
+    CONF_CARD_TYPES,
     CONF_FIAT,
     CONF_PAY_TYPES,
     CONF_SCAN_INTERVAL,
@@ -110,6 +111,7 @@ class BinanceP2PConfigFlow(ConfigFlow, domain=DOMAIN):
                         return await self.async_step_payment_methods()
 
                     self._data[CONF_PAY_TYPES] = []
+                    self._data[CONF_CARD_TYPES] = []
                     return self.async_create_entry(
                         title=f"Binance P2P {asset}/{fiat} {trade_type}",
                         data=self._data,
@@ -124,11 +126,19 @@ class BinanceP2PConfigFlow(ConfigFlow, domain=DOMAIN):
     ) -> Any:
         """Let the user pick payment methods from Binance's real list.
 
-        Optional - leaving the selection empty means "any payment method",
-        same as before.
+        Two independent, optional multi-selects, both left empty by default
+        (= no filter, same as before):
+
+        - pay_types: general accepted payment methods
+        - card_types: a second, ANDed condition - the offer must ALSO
+          support at least one of these specific banks/cards for crediting
+          funds. Kept as a separate field rather than folded into pay_types
+          because the two are combined with AND, not OR - see
+          BinanceP2PClient.async_fetch_offers().
         """
         if user_input is not None:
             self._data[CONF_PAY_TYPES] = user_input.get(CONF_PAY_TYPES, [])
+            self._data[CONF_CARD_TYPES] = user_input.get(CONF_CARD_TYPES, [])
             asset = self._data[CONF_ASSET]
             fiat = self._data[CONF_FIAT]
             trade_type = self._data[CONF_TRADE_TYPE]
@@ -144,6 +154,13 @@ class BinanceP2PConfigFlow(ConfigFlow, domain=DOMAIN):
         schema = vol.Schema(
             {
                 vol.Optional(CONF_PAY_TYPES, default=[]): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=options,
+                        multiple=True,
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                    )
+                ),
+                vol.Optional(CONF_CARD_TYPES, default=[]): selector.SelectSelector(
                     selector.SelectSelectorConfig(
                         options=options,
                         multiple=True,

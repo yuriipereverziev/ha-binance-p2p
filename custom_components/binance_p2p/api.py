@@ -44,6 +44,7 @@ class BinanceP2PClient:
         fiat: str,
         trade_type: str,
         pay_types: list[str] | None = None,
+        card_types: list[str] | None = None,
         rows: int = DEFAULT_ROWS,
     ) -> None:
         self._session = session
@@ -51,6 +52,11 @@ class BinanceP2PClient:
         self._fiat = fiat
         self._trade_type = trade_type
         self._pay_types = pay_types or []
+        # Second, independent condition: offer must ALSO support at least
+        # one of these "card for crediting" identifiers. Kept separate from
+        # _pay_types (rather than merged into one list) because the two are
+        # ANDed together client-side - see async_fetch_offers().
+        self._card_types = card_types or []
         self._rows = rows
 
     async def async_fetch_offers(self) -> list[dict[str, Any]]:
@@ -61,13 +67,19 @@ class BinanceP2PClient:
         Binance already returns results sorted this way, but we sort
         defensively in case that ever changes.
         """
+        # Binance's own payTypes filter is OR-based (matches offers
+        # supporting ANY of the given identifiers), so we send it the union
+        # of both conditions to avoid over-filtering server-side, then
+        # enforce the real AND-between-groups logic ourselves below.
+        server_pay_types = list(set(self._pay_types) | set(self._card_types))
+
         payload = {
             "asset": self._asset,
             "fiat": self._fiat,
             "tradeType": self._trade_type,
             "page": 1,
             "rows": self._rows,
-            "payTypes": self._pay_types,
+            "payTypes": server_pay_types,
             "publisherType": None,
         }
 
@@ -96,6 +108,18 @@ class BinanceP2PClient:
             raise BinanceP2PError(f"Unexpected response payload: {data}")
 
         offers = [self._normalize(item) for item in data["data"]]
+
+        if self._pay_types:
+            offers = [
+                o for o in offers
+                if set(o["payment_method_ids"]) & set(self._pay_types)
+            ]
+        if self._card_types:
+            offers = [
+                o for o in offers
+                if set(o["payment_method_ids"]) & set(self._card_types)
+            ]
+
         reverse = self._trade_type == "SELL"
         offers.sort(key=lambda o: o["price"], reverse=reverse)
         return offers
@@ -105,13 +129,23 @@ class BinanceP2PClient:
         adv = item.get("adv", {})
         advertiser = item.get("advertiser", {})
 
+        trade_methods = adv.get("tradeMethods", [])
         pay_methods = [
             method.get("tradeMethodName") or method.get("identifier")
-            for method in adv.get("tradeMethods", [])
+            for method in trade_methods
+        ]
+        # Raw identifiers (e.g. "Monobank", "PrivatBank") used for matching
+        # against the config's pay_types/card_types filters - separate from
+        # pay_methods above, which is the human-readable display list.
+        pay_method_ids = [
+            method.get("identifier")
+            for method in trade_methods
+            if method.get("identifier")
         ]
 
         return {
             "price": float(adv.get("price", 0)),
+            "payment_method_ids": pay_method_ids,
             "min_limit": float(adv.get("minSingleTransAmount", 0)),
             # dynamicMaxSingleTransAmount reflects the max limited by the
             # merchant's remaining surplus; fall back to the static limit
