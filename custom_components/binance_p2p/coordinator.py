@@ -13,10 +13,12 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from .api import BinanceP2PClient, BinanceP2PError
 from .const import (
     CONF_ASSET,
+    CONF_DESIRED_AMOUNT,
     CONF_FIAT,
     CONF_PAY_TYPES,
     CONF_SCAN_INTERVAL,
     CONF_TRADE_TYPE,
+    DEFAULT_DESIRED_AMOUNT,
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
 )
@@ -43,6 +45,15 @@ class BinanceP2PCoordinator(DataUpdateCoordinator[list[dict[str, Any]]]):
             pay_types=entry.data.get(CONF_PAY_TYPES, []),
         )
 
+        # Desired transaction amount, used by entities to pick the best
+        # offer whose min/max limit actually covers this amount. This is
+        # changed live via the "Desired amount" number entity, not via the
+        # config/options flow - it's runtime state, not a static setting.
+        # 0 means "no filter", i.e. just show the plain top-of-book offer.
+        self.desired_amount: float = entry.data.get(
+            CONF_DESIRED_AMOUNT, DEFAULT_DESIRED_AMOUNT
+        )
+
         super().__init__(
             hass,
             _LOGGER,
@@ -60,3 +71,31 @@ class BinanceP2PCoordinator(DataUpdateCoordinator[list[dict[str, Any]]]):
             raise UpdateFailed("Binance P2P returned no offers for this pair")
 
         return offers
+
+    def best_offer(self) -> dict[str, Any] | None:
+        """Return the best offer that can cover ``desired_amount``.
+
+        If ``desired_amount`` is 0 (no filter set), just returns the plain
+        top-of-book offer. Filtering happens against the already-cached
+        offer list, so changing the amount never triggers a new API call.
+        """
+        offers = self.data
+        if not offers:
+            return None
+
+        amount = self.desired_amount
+        if not amount:
+            return offers[0]
+
+        for offer in offers:
+            if offer["min_limit"] <= amount <= offer["max_limit"]:
+                return offer
+        return None
+
+    def matching_offers_count(self) -> int:
+        """Count offers whose limits cover the current desired amount."""
+        offers = self.data or []
+        amount = self.desired_amount
+        if not amount:
+            return len(offers)
+        return sum(1 for o in offers if o["min_limit"] <= amount <= o["max_limit"])

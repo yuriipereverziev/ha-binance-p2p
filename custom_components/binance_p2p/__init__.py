@@ -7,7 +7,7 @@ from homeassistant.core import HomeAssistant
 from .const import DOMAIN
 from .coordinator import BinanceP2PCoordinator
 
-PLATFORMS = ["sensor"]
+PLATFORMS = ["sensor", "number"]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

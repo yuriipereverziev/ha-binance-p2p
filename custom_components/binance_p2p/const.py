@@ -7,11 +7,16 @@ CONF_FIAT = "fiat"
 CONF_TRADE_TYPE = "trade_type"
 CONF_PAY_TYPES = "pay_types"
 CONF_SCAN_INTERVAL = "scan_interval"
+CONF_DESIRED_AMOUNT = "desired_amount"
 
 DEFAULT_SCAN_INTERVAL = 60  # seconds
 MIN_SCAN_INTERVAL = 60  # seconds - lower values risk rate-limiting/bans by Binance
 DEFAULT_TRADE_TYPE = "BUY"
 DEFAULT_ROWS = 10
+# 0 = no filter (show the plain top-of-book offer, regardless of its limits)
+DEFAULT_DESIRED_AMOUNT = 0
+NUMBER_MAX_AMOUNT = 1_000_000_000
+NUMBER_STEP_AMOUNT = 100
 
 TRADE_TYPES = ["BUY", "SELL"]
 
@@ -25,3 +30,5 @@ ATTR_ORDER_COUNT = "order_count"
 ATTR_PAYMENT_METHODS = "payment_methods"
 ATTR_AVAILABLE_AMOUNT = "available_amount"
 ATTR_LAST_UPDATED = "last_updated"
+ATTR_DESIRED_AMOUNT = "desired_amount"
+ATTR_MATCHING_OFFERS = "matching_offers_count"

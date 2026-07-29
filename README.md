@@ -36,6 +36,19 @@ You'll be asked for:
 - Update interval in seconds (minimum 60s — lower values risk being
   rate-limited or temporarily blocked by Binance)
 
+## Entities
+
+- `sensor.<...>_best_price` — price of the best offer (or the best offer
+  that covers the desired amount, see below). Attributes include merchant,
+  limits, rating, payment methods, etc.
+- `number.<...>_desired_amount` — the transaction amount you actually want
+  to trade. Set to `0` (default) to just see the plain top-of-book offer
+  regardless of its limits. Set it to a real amount and the price sensor
+  will instead show the best offer whose min/max limit actually covers
+  that amount — useful since many top-of-book offers have a limit too low
+  for what you want to trade. Changing this value is instant: it re-filters
+  the already-cached offer list without polling Binance again.
+
 ## Example automation
 
 ```yaml

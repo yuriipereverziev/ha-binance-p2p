@@ -12,7 +12,9 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
     ATTR_AVAILABLE_AMOUNT,
+    ATTR_DESIRED_AMOUNT,
     ATTR_LAST_UPDATED,
+    ATTR_MATCHING_OFFERS,
     ATTR_MAX_LIMIT,
     ATTR_MERCHANT,
     ATTR_MERCHANT_RATING,
@@ -70,8 +72,7 @@ class BinanceP2PBestPriceSensor(CoordinatorEntity[BinanceP2PCoordinator], Sensor
 
     @property
     def _best_offer(self) -> dict[str, Any] | None:
-        offers = self.coordinator.data
-        return offers[0] if offers else None
+        return self.coordinator.best_offer()
 
     @property
     def native_value(self) -> float | None:
@@ -81,16 +82,23 @@ class BinanceP2PBestPriceSensor(CoordinatorEntity[BinanceP2PCoordinator], Sensor
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         offer = self._best_offer
-        if not offer:
-            return {}
-
-        return {
-            ATTR_MERCHANT: offer["merchant"],
-            ATTR_MIN_LIMIT: offer["min_limit"],
-            ATTR_MAX_LIMIT: offer["max_limit"],
-            ATTR_MERCHANT_RATING: offer["merchant_rating"],
-            ATTR_ORDER_COUNT: offer["order_count"],
-            ATTR_PAYMENT_METHODS: offer["payment_methods"],
-            ATTR_AVAILABLE_AMOUNT: offer["available_amount"],
-            ATTR_LAST_UPDATED: datetime.now(timezone.utc).isoformat(),
+        attrs: dict[str, Any] = {
+            ATTR_DESIRED_AMOUNT: self.coordinator.desired_amount,
+            ATTR_MATCHING_OFFERS: self.coordinator.matching_offers_count(),
         }
+        if not offer:
+            return attrs
+
+        attrs.update(
+            {
+                ATTR_MERCHANT: offer["merchant"],
+                ATTR_MIN_LIMIT: offer["min_limit"],
+                ATTR_MAX_LIMIT: offer["max_limit"],
+                ATTR_MERCHANT_RATING: offer["merchant_rating"],
+                ATTR_ORDER_COUNT: offer["order_count"],
+                ATTR_PAYMENT_METHODS: offer["payment_methods"],
+                ATTR_AVAILABLE_AMOUNT: offer["available_amount"],
+                ATTR_LAST_UPDATED: datetime.now(timezone.utc).isoformat(),
+            }
+        )
+        return attrs
