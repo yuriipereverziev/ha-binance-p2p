@@ -68,7 +68,16 @@ class BinanceP2PDesiredAmountNumber(NumberEntity, RestoreEntity):
         }
 
     async def async_added_to_hass(self) -> None:
-        """Restore the last value across HA restarts (0 = no filter)."""
+        """Restore the last value across HA restarts (0 = no filter).
+
+        This runs after the coordinator's first refresh (during platform
+        setup), so the price sensor's initial state was already computed
+        with the coordinator's default desired_amount (0/no filter). Just
+        setting the restored value here isn't enough - CoordinatorEntity
+        only re-renders when the coordinator notifies its listeners, so
+        without this call the sensor would keep showing the unfiltered
+        offer until the next manual change or scheduled poll.
+        """
         await super().async_added_to_hass()
         last_state = await self.async_get_last_state()
         if last_state is not None and last_state.state not in (
@@ -77,9 +86,12 @@ class BinanceP2PDesiredAmountNumber(NumberEntity, RestoreEntity):
             "unavailable",
         ):
             try:
-                self._coordinator.desired_amount = float(last_state.state)
+                restored = float(last_state.state)
             except ValueError:
-                pass
+                return
+            if restored != self._coordinator.desired_amount:
+                self._coordinator.desired_amount = restored
+                self._coordinator.async_update_listeners()
 
     @property
     def available(self) -> bool:

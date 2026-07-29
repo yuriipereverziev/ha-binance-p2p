@@ -11,6 +11,8 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
+    ATTR_ACTIVE_CARD_TYPES,
+    ATTR_ACTIVE_PAY_TYPES,
     ATTR_AVAILABLE_AMOUNT,
     ATTR_DESIRED_AMOUNT,
     ATTR_LAST_UPDATED,
@@ -85,6 +87,8 @@ class BinanceP2PBestPriceSensor(CoordinatorEntity[BinanceP2PCoordinator], Sensor
         attrs: dict[str, Any] = {
             ATTR_DESIRED_AMOUNT: self.coordinator.desired_amount,
             ATTR_MATCHING_OFFERS: self.coordinator.matching_offers_count(),
+            ATTR_ACTIVE_PAY_TYPES: self.coordinator.pay_types,
+            ATTR_ACTIVE_CARD_TYPES: self.coordinator.card_types,
         }
         if not offer:
             return attrs

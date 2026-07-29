@@ -37,18 +37,21 @@ class BinanceP2PCoordinator(DataUpdateCoordinator[list[dict[str, Any]]]):
             entry.data.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL),
         )
 
+        self.pay_types = entry.options.get(
+            CONF_PAY_TYPES, entry.data.get(CONF_PAY_TYPES, [])
+        )
+        self.card_types = entry.options.get(
+            CONF_CARD_TYPES, entry.data.get(CONF_CARD_TYPES, [])
+        )
+
         session = async_get_clientsession(hass)
         self.client = BinanceP2PClient(
             session=session,
             asset=entry.data[CONF_ASSET],
             fiat=entry.data[CONF_FIAT],
             trade_type=entry.data[CONF_TRADE_TYPE],
-            pay_types=entry.options.get(
-                CONF_PAY_TYPES, entry.data.get(CONF_PAY_TYPES, [])
-            ),
-            card_types=entry.options.get(
-                CONF_CARD_TYPES, entry.data.get(CONF_CARD_TYPES, [])
-            ),
+            pay_types=self.pay_types,
+            card_types=self.card_types,
         )
 
         # Desired transaction amount, used by entities to pick the best
