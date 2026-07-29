@@ -34,7 +34,9 @@
       "init": {
         "title": "Binance P2P options",
         "data": {
-          "scan_interval": "Update interval (seconds)"
+          "scan_interval": "Update interval (seconds)",
+          "pay_types": "Payment methods",
+          "card_types": "Cards for crediting"
         }
       }
     }

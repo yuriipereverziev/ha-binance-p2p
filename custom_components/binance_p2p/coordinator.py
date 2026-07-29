@@ -43,8 +43,12 @@ class BinanceP2PCoordinator(DataUpdateCoordinator[list[dict[str, Any]]]):
             asset=entry.data[CONF_ASSET],
             fiat=entry.data[CONF_FIAT],
             trade_type=entry.data[CONF_TRADE_TYPE],
-            pay_types=entry.data.get(CONF_PAY_TYPES, []),
-            card_types=entry.data.get(CONF_CARD_TYPES, []),
+            pay_types=entry.options.get(
+                CONF_PAY_TYPES, entry.data.get(CONF_PAY_TYPES, [])
+            ),
+            card_types=entry.options.get(
+                CONF_CARD_TYPES, entry.data.get(CONF_CARD_TYPES, [])
+            ),
         )
 
         # Desired transaction amount, used by entities to pick the best

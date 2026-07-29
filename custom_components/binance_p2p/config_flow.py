@@ -178,10 +178,11 @@ class BinanceP2PConfigFlow(ConfigFlow, domain=DOMAIN):
 
 
 class BinanceP2POptionsFlow(OptionsFlow):
-    """Allow changing the scan interval after setup, without a reconfigure."""
+    """Allow changing scan interval and payment/card filters after setup."""
 
     def __init__(self, entry: ConfigEntry) -> None:
         self._entry = entry
+        self._pay_type_options: list[dict[str, str]] = []
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
@@ -189,16 +190,62 @@ class BinanceP2POptionsFlow(OptionsFlow):
         if user_input is not None:
             return self.async_create_entry(title="", data=user_input)
 
-        current = self._entry.options.get(
+        current_interval = self._entry.options.get(
             CONF_SCAN_INTERVAL,
             self._entry.data.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL),
         )
 
-        schema = vol.Schema(
-            {
-                vol.Required(CONF_SCAN_INTERVAL, default=current): vol.All(
-                    vol.Coerce(int), vol.Range(min=MIN_SCAN_INTERVAL)
-                ),
-            }
+        # Best-effort: fetch the live payment-method list so the user picks
+        # from validated options here too. If it fails, fall back to just
+        # showing the interval field (same degrade-gracefully behavior as
+        # the initial config flow).
+        session = async_get_clientsession(self.hass)
+        try:
+            self._pay_type_options = await async_fetch_payment_methods(
+                session, self._entry.data[CONF_FIAT]
+            )
+        except BinanceP2PError:
+            _LOGGER.warning(
+                "Could not fetch payment methods for options flow; "
+                "showing only the update interval"
+            )
+            self._pay_type_options = []
+
+        current_pay_types = self._entry.options.get(
+            CONF_PAY_TYPES, self._entry.data.get(CONF_PAY_TYPES, [])
         )
-        return self.async_show_form(step_id="init", data_schema=schema)
+        current_card_types = self._entry.options.get(
+            CONF_CARD_TYPES, self._entry.data.get(CONF_CARD_TYPES, [])
+        )
+
+        schema_dict: dict[Any, Any] = {
+            vol.Required(CONF_SCAN_INTERVAL, default=current_interval): vol.All(
+                vol.Coerce(int), vol.Range(min=MIN_SCAN_INTERVAL)
+            ),
+        }
+
+        if self._pay_type_options:
+            options = [
+                selector.SelectOptionDict(value=m["identifier"], label=m["name"])
+                for m in self._pay_type_options
+            ]
+            schema_dict[
+                vol.Optional(CONF_PAY_TYPES, default=current_pay_types)
+            ] = selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=options,
+                    multiple=True,
+                    mode=selector.SelectSelectorMode.DROPDOWN,
+                )
+            )
+            schema_dict[
+                vol.Optional(CONF_CARD_TYPES, default=current_card_types)
+            ] = selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=options,
+                    multiple=True,
+                    mode=selector.SelectSelectorMode.DROPDOWN,
+                )
+            )
+
+        return self.async_show_form(step_id="init", data_schema=vol.Schema(schema_dict))
