@@ -22,6 +22,7 @@ from .const import (
     ATTR_MERCHANT_RATING,
     ATTR_MIN_LIMIT,
     ATTR_ORDER_COUNT,
+    ATTR_PAYMENT_METHOD_IDS,
     ATTR_PAYMENT_METHODS,
     CONF_ASSET,
     CONF_FIAT,
@@ -101,6 +102,7 @@ class BinanceP2PBestPriceSensor(CoordinatorEntity[BinanceP2PCoordinator], Sensor
                 ATTR_MERCHANT_RATING: offer["merchant_rating"],
                 ATTR_ORDER_COUNT: offer["order_count"],
                 ATTR_PAYMENT_METHODS: offer["payment_methods"],
+                ATTR_PAYMENT_METHOD_IDS: offer["payment_method_ids"],
                 ATTR_AVAILABLE_AMOUNT: offer["available_amount"],
                 ATTR_LAST_UPDATED: datetime.now(timezone.utc).isoformat(),
             }
