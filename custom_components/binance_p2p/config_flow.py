@@ -99,11 +99,12 @@ class BinanceP2PConfigFlow(ConfigFlow, domain=DOMAIN):
                         self._pay_type_options = await async_fetch_payment_methods(
                             session, fiat
                         )
-                    except BinanceP2PError:
+                    except BinanceP2PError as err:
                         _LOGGER.warning(
-                            "Could not fetch payment methods for %s; "
+                            "Could not fetch payment methods for %s (%s); "
                             "continuing without a payment method filter",
                             fiat,
+                            err,
                         )
                         self._pay_type_options = []
 
@@ -204,10 +205,16 @@ class BinanceP2POptionsFlow(OptionsFlow):
             self._pay_type_options = await async_fetch_payment_methods(
                 session, self._entry.data[CONF_FIAT]
             )
-        except BinanceP2PError:
+        except BinanceP2PError as err:
             _LOGGER.warning(
-                "Could not fetch payment methods for options flow; "
-                "showing only the update interval"
+                "Could not fetch payment methods for options flow (%s); "
+                "showing only the update interval",
+                err,
+            )
+            self._pay_type_options = []
+        except Exception:  # noqa: BLE001
+            _LOGGER.exception(
+                "Unexpected error fetching payment methods for options flow"
             )
             self._pay_type_options = []
 
