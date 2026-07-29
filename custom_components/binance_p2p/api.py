@@ -7,7 +7,7 @@ from typing import Any
 
 import aiohttp
 
-from .const import BINANCE_P2P_URL, DEFAULT_ROWS
+from .const import BINANCE_P2P_TRADE_METHODS_URL, BINANCE_P2P_URL, DEFAULT_ROWS
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -126,3 +126,45 @@ class BinanceP2PClient:
             "order_count": advertiser.get("monthOrderCount"),
             "payment_methods": pay_methods,
         }
+
+
+async def async_fetch_payment_methods(
+    session: aiohttp.ClientSession, fiat: str
+) -> list[dict[str, str]]:
+    """Fetch the real list of payment-method identifiers Binance supports
+    for a given fiat currency.
+
+    Used by the config flow so the user picks payment methods from a
+    validated list instead of typing free-form text: a typo or a name
+    that doesn't match Binance's internal identifier would otherwise be
+    silently ignored as a filter (payTypes just wouldn't match anything).
+    """
+    url = f"{BINANCE_P2P_TRADE_METHODS_URL}?fiat={fiat}"
+
+    try:
+        async with asyncio.timeout(REQUEST_TIMEOUT):
+            async with session.get(url, headers=_HEADERS) as resp:
+                if resp.status != 200:
+                    raise BinanceP2PError(
+                        f"Unexpected status {resp.status} fetching payment methods"
+                    )
+                data = await resp.json(content_type=None)
+    except aiohttp.ClientError as err:
+        raise BinanceP2PError(f"Error fetching payment methods: {err}") from err
+    except TimeoutError as err:
+        raise BinanceP2PError("Timeout fetching payment methods") from err
+    except ValueError as err:
+        raise BinanceP2PError(f"Invalid payment methods response: {err}") from err
+
+    if not isinstance(data, list):
+        raise BinanceP2PError(f"Unexpected payment methods payload: {data}")
+
+    methods: list[dict[str, str]] = []
+    for item in data:
+        identifier = item.get("identifier")
+        if not identifier:
+            continue
+        methods.append(
+            {"identifier": identifier, "name": item.get("tradeMethodName") or identifier}
+        )
+    return methods

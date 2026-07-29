@@ -7,9 +7,10 @@ from typing import Any
 import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry, ConfigFlow, OptionsFlow
 from homeassistant.core import callback
+from homeassistant.helpers import selector
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
-from .api import BinanceP2PClient, BinanceP2PError
+from .api import BinanceP2PClient, BinanceP2PError, async_fetch_payment_methods
 from .const import (
     CONF_ASSET,
     CONF_FIAT,
@@ -30,7 +31,6 @@ STEP_USER_SCHEMA = vol.Schema(
         vol.Required(CONF_ASSET, default="USDT"): str,
         vol.Required(CONF_FIAT, default="UAH"): str,
         vol.Required(CONF_TRADE_TYPE, default=DEFAULT_TRADE_TYPE): vol.In(TRADE_TYPES),
-        vol.Optional(CONF_PAY_TYPES, default=""): str,
         vol.Optional(CONF_SCAN_INTERVAL, default=DEFAULT_SCAN_INTERVAL): vol.All(
             vol.Coerce(int), vol.Range(min=MIN_SCAN_INTERVAL)
         ),
@@ -38,15 +38,14 @@ STEP_USER_SCHEMA = vol.Schema(
 )
 
 
-def _parse_pay_types(raw: str) -> list[str]:
-    """Turn a comma-separated pay-type string into a clean list."""
-    return [p.strip() for p in raw.split(",") if p.strip()]
-
-
 class BinanceP2PConfigFlow(ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Binance P2P."""
 
     VERSION = 1
+
+    def __init__(self) -> None:
+        self._data: dict[str, Any] = {}
+        self._pay_type_options: list[dict[str, str]] = []
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
@@ -57,7 +56,6 @@ class BinanceP2PConfigFlow(ConfigFlow, domain=DOMAIN):
             asset = user_input[CONF_ASSET].strip().upper()
             fiat = user_input[CONF_FIAT].strip().upper()
             trade_type = user_input[CONF_TRADE_TYPE]
-            pay_types = _parse_pay_types(user_input.get(CONF_PAY_TYPES, ""))
             scan_interval = user_input[CONF_SCAN_INTERVAL]
 
             unique_id = f"{asset}_{fiat}_{trade_type}".lower()
@@ -70,7 +68,7 @@ class BinanceP2PConfigFlow(ConfigFlow, domain=DOMAIN):
                 asset=asset,
                 fiat=fiat,
                 trade_type=trade_type,
-                pay_types=pay_types,
+                pay_types=[],
             )
 
             try:
@@ -84,20 +82,77 @@ class BinanceP2PConfigFlow(ConfigFlow, domain=DOMAIN):
                 if not offers:
                     errors["base"] = "no_offers"
                 else:
+                    self._data = {
+                        CONF_ASSET: asset,
+                        CONF_FIAT: fiat,
+                        CONF_TRADE_TYPE: trade_type,
+                        CONF_SCAN_INTERVAL: scan_interval,
+                    }
+
+                    # Best-effort: fetch Binance's own list of payment
+                    # method identifiers for this fiat, so the next step
+                    # can offer a validated multi-select instead of a
+                    # free-text field. If this fails, just skip the
+                    # payment-method step entirely (no filter = any).
+                    try:
+                        self._pay_type_options = await async_fetch_payment_methods(
+                            session, fiat
+                        )
+                    except BinanceP2PError:
+                        _LOGGER.warning(
+                            "Could not fetch payment methods for %s; "
+                            "continuing without a payment method filter",
+                            fiat,
+                        )
+                        self._pay_type_options = []
+
+                    if self._pay_type_options:
+                        return await self.async_step_payment_methods()
+
+                    self._data[CONF_PAY_TYPES] = []
                     return self.async_create_entry(
                         title=f"Binance P2P {asset}/{fiat} {trade_type}",
-                        data={
-                            CONF_ASSET: asset,
-                            CONF_FIAT: fiat,
-                            CONF_TRADE_TYPE: trade_type,
-                            CONF_PAY_TYPES: pay_types,
-                            CONF_SCAN_INTERVAL: scan_interval,
-                        },
+                        data=self._data,
                     )
 
         return self.async_show_form(
             step_id="user", data_schema=STEP_USER_SCHEMA, errors=errors
         )
+
+    async def async_step_payment_methods(
+        self, user_input: dict[str, Any] | None = None
+    ) -> Any:
+        """Let the user pick payment methods from Binance's real list.
+
+        Optional - leaving the selection empty means "any payment method",
+        same as before.
+        """
+        if user_input is not None:
+            self._data[CONF_PAY_TYPES] = user_input.get(CONF_PAY_TYPES, [])
+            asset = self._data[CONF_ASSET]
+            fiat = self._data[CONF_FIAT]
+            trade_type = self._data[CONF_TRADE_TYPE]
+            return self.async_create_entry(
+                title=f"Binance P2P {asset}/{fiat} {trade_type}",
+                data=self._data,
+            )
+
+        options = [
+            selector.SelectOptionDict(value=m["identifier"], label=m["name"])
+            for m in self._pay_type_options
+        ]
+        schema = vol.Schema(
+            {
+                vol.Optional(CONF_PAY_TYPES, default=[]): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=options,
+                        multiple=True,
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                    )
+                ),
+            }
+        )
+        return self.async_show_form(step_id="payment_methods", data_schema=schema)
 
     @staticmethod
     @callback

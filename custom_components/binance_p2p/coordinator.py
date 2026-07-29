@@ -72,6 +72,23 @@ class BinanceP2PCoordinator(DataUpdateCoordinator[list[dict[str, Any]]]):
 
         return offers
 
+    @staticmethod
+    def _offer_covers_amount(offer: dict[str, Any], amount: float) -> bool:
+        """Check both the advertised limits and the merchant's real surplus.
+
+        An offer's min/max limit alone isn't enough: a merchant may have a
+        high max_limit but very little crypto actually left to sell/buy
+        (available_amount). Without this check we could point the user at
+        an offer that looks big enough on paper but can't actually fill
+        their desired fiat amount.
+        """
+        if not (offer["min_limit"] <= amount <= offer["max_limit"]):
+            return False
+        if not offer["price"]:
+            return False
+        required_qty = amount / offer["price"]
+        return required_qty <= offer["available_amount"]
+
     def best_offer(self) -> dict[str, Any] | None:
         """Return the best offer that can cover ``desired_amount``.
 
@@ -88,14 +105,14 @@ class BinanceP2PCoordinator(DataUpdateCoordinator[list[dict[str, Any]]]):
             return offers[0]
 
         for offer in offers:
-            if offer["min_limit"] <= amount <= offer["max_limit"]:
+            if self._offer_covers_amount(offer, amount):
                 return offer
         return None
 
     def matching_offers_count(self) -> int:
-        """Count offers whose limits cover the current desired amount."""
+        """Count offers that can actually cover the current desired amount."""
         offers = self.data or []
         amount = self.desired_amount
         if not amount:
             return len(offers)
-        return sum(1 for o in offers if o["min_limit"] <= amount <= o["max_limit"])
+        return sum(1 for o in offers if self._offer_covers_amount(o, amount))

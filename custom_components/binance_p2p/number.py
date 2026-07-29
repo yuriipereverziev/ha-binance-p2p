@@ -41,7 +41,7 @@ class BinanceP2PDesiredAmountNumber(NumberEntity, RestoreEntity):
     """Desired transaction amount, used to filter the best-price sensor."""
 
     _attr_has_entity_name = True
-    _attr_name = "Desired amount"
+    _attr_translation_key = "desired_amount"
     _attr_icon = "mdi:cash-marker"
     _attr_native_min_value = 0
     _attr_native_max_value = NUMBER_MAX_AMOUNT

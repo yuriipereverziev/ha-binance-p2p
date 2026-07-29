@@ -43,7 +43,7 @@ class BinanceP2PBestPriceSensor(CoordinatorEntity[BinanceP2PCoordinator], Sensor
     """Sensor exposing the best (top of book) Binance P2P offer."""
 
     _attr_has_entity_name = True
-    _attr_name = "Best price"
+    _attr_translation_key = "best_price"
     _attr_icon = "mdi:currency-usd"
     # Note: HA only allows state_class="total" together with device_class
     # MONETARY, and that doesn't semantically fit a fluctuating spot price

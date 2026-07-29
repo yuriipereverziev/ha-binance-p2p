@@ -8,8 +8,14 @@
           "asset": "Asset (e.g. USDT)",
           "fiat": "Fiat currency (e.g. UAH)",
           "trade_type": "Trade type",
-          "pay_types": "Payment methods (comma-separated, leave empty for any)",
           "scan_interval": "Update interval (seconds)"
+        }
+      },
+      "payment_methods": {
+        "title": "Payment methods",
+        "description": "Optionally restrict offers to specific payment methods. Leave empty to allow any.",
+        "data": {
+          "pay_types": "Payment methods"
         }
       }
     },
@@ -29,6 +35,18 @@
         "data": {
           "scan_interval": "Update interval (seconds)"
         }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "best_price": {
+        "name": "Best price"
+      }
+    },
+    "number": {
+      "desired_amount": {
+        "name": "Desired amount"
       }
     }
   }

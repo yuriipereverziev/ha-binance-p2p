@@ -32,9 +32,16 @@ You'll be asked for:
 - Asset (e.g. `USDT`)
 - Fiat (e.g. `UAH`)
 - Trade type (`BUY` or `SELL`)
-- Payment methods (optional filter)
 - Update interval in seconds (minimum 60s — lower values risk being
   rate-limited or temporarily blocked by Binance)
+
+After that, if Binance's payment-method list for your fiat can be fetched,
+you'll see a second step to optionally pick specific payment methods from
+a real, validated list (instead of typing free text that might not match
+Binance's internal identifiers and get silently ignored). Leave it empty
+to allow any payment method. If that list can't be fetched (e.g. Binance
+temporarily unreachable), this step is skipped automatically and no
+payment-method filter is applied.
 
 ## Entities
 

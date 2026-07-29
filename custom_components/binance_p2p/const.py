@@ -21,6 +21,9 @@ NUMBER_STEP_AMOUNT = 100
 TRADE_TYPES = ["BUY", "SELL"]
 
 BINANCE_P2P_URL = "https://p2p.binance.com/bapi/c2c/v2/friendly/c2c/adv/search"
+BINANCE_P2P_TRADE_METHODS_URL = (
+    "https://p2p.binance.com/bapi/c2c/v1/public/c2c/agent/trade-methods"
+)
 
 ATTR_MERCHANT = "merchant"
 ATTR_MIN_LIMIT = "min_limit"
