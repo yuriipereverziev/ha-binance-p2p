@@ -1,0 +1,177 @@
+type: vertical-stack
+cards:
+  - type: horizontal-stack
+    cards:
+      - type: custom:mushroom-template-card
+        entity: sensor.binance_p2p_usdt_uah_sell_best_price
+        primary: USDT → UAH
+        secondary: Продажа
+        icon: mdi:currency-usd
+        color: blue
+        card_mod:
+          style: |
+            ha-card {
+              background: rgba(255,255,255,0.05) !important;
+              border: 1px solid rgba(255,255,255,0.07) !important;
+              border-radius: 14px !important;
+              backdrop-filter: blur(12px) !important;
+
+            }
+      - type: custom:mushroom-template-card
+        entity: sensor.binance_p2p_usdt_uah_sell_best_price
+        primary: "{{ states(entity) }} грн"
+        secondary: ⭐ {{ (state_attr(entity,'merchant_rating')*100)|round(1) }}%
+        icon: mdi:trending-up
+        color: >-
+          {% set r = (state_attr(entity,'merchant_rating') or 0) * 100 %} {{
+          'green' if r >= 95 else 'amber' if r >= 90 else 'red' }}
+        card_mod:
+          style: |
+            ha-card {
+              background: rgba(255,255,255,0.05) !important;
+              border: 1px solid rgba(255,255,255,0.07) !important;
+              border-radius: 14px !important;
+              backdrop-filter: blur(12px) !important;
+
+            }
+  - type: horizontal-stack
+    cards:
+      - type: custom:mushroom-template-card
+        entity: sensor.binance_p2p_usdt_uah_sell_best_price
+        primary: "{{ state_attr(entity,'merchant') }}"
+        secondary: "{{ state_attr(entity,'order_count') }} угод"
+        icon: mdi:account
+        color: >-
+          {{ 'green' if (state_attr(entity,'order_count') or 0) >= 100 else
+          'grey' }}
+        card_mod:
+          style: |
+            ha-card {
+              background: rgba(255,255,255,0.05) !important;
+              border: 1px solid rgba(255,255,255,0.07) !important;
+              border-radius: 14px !important;
+              backdrop-filter: blur(12px) !important;
+
+            }
+      - type: custom:mushroom-template-card
+        entity: sensor.binance_p2p_usdt_uah_sell_best_price
+        primary: "{{ state_attr(entity,'available_amount')|round(0) }}"
+        secondary: Доступно
+        icon: mdi:cash-multiple
+        color: teal
+        card_mod:
+          style: |
+            ha-card {
+              background: rgba(255,255,255,0.05) !important;
+              border: 1px solid rgba(255,255,255,0.07) !important;
+              border-radius: 14px !important;
+              backdrop-filter: blur(12px) !important;
+
+            }
+  - type: grid
+    columns: 2
+    square: false
+    cards:
+      - type: custom:mushroom-template-card
+        entity: sensor.binance_p2p_usdt_uah_sell_best_price
+        primary: "{{ state_attr(entity,'min_limit')|round(0) }}"
+        secondary: Мін, грн
+        icon: mdi:arrow-down-bold
+        color: grey
+        card_mod:
+          style: |
+            ha-card {
+              background: rgba(255,255,255,0.05) !important;
+              border: 1px solid rgba(255,255,255,0.07) !important;
+              border-radius: 14px !important;
+              backdrop-filter: blur(12px) !important;
+
+            }
+      - type: custom:mushroom-template-card
+        entity: sensor.binance_p2p_usdt_uah_sell_best_price
+        primary: "{{ state_attr(entity,'max_limit')|round(0) }}"
+        secondary: Макс, грн
+        icon: mdi:arrow-up-bold
+        color: grey
+        card_mod:
+          style: |
+            ha-card {
+              background: rgba(255,255,255,0.05) !important;
+              border: 1px solid rgba(255,255,255,0.07) !important;
+              border-radius: 14px !important;
+              backdrop-filter: blur(12px) !important;
+
+            }
+  - type: custom:mushroom-number-card
+    entity: number.binance_p2p_usdt_uah_sell_desired_amount
+    primary_info: name
+    secondary_info: none
+    icon: mdi:cash-marker
+    display_mode: buttons
+    card_mod:
+      style: |
+        ha-card {
+          background: rgba(255,255,255,0.05) !important;
+          border: 1px solid rgba(255,255,255,0.07) !important;
+          border-radius: 14px !important;
+          backdrop-filter: blur(12px) !important;
+
+        }
+  - type: markdown
+    content: >
+      **💳 Способы оплаты**
+
+
+      {% for m in state_attr('sensor.binance_p2p_usdt_uah_sell_best_price',
+      'payment_methods') %}
+
+      - {{ m }}
+
+      {% endfor %}
+
+
+      ---
+
+      _Обновлено: {{
+      as_timestamp(state_attr('sensor.binance_p2p_usdt_uah_sell_best_price',
+      'last_updated')) | timestamp_custom('%H:%M:%S') }}_
+    card_mod:
+      style: |
+        ha-card {
+          background: rgba(255,255,255,0.05) !important;
+          border: 1px solid rgba(255,255,255,0.07) !important;
+          border-radius: 14px !important;
+          backdrop-filter: blur(12px) !important;
+
+        }
+  - type: markdown
+    content: |
+      **🔎 Активний фільтр**
+
+      **Способи оплати:**
+      {% set pay = state_attr('sensor.binance_p2p_usdt_uah_sell_best_price', 'active_payment_method_filter') %}
+      {% if pay %}
+      {% for m in pay %}
+      - {{ m }}
+      {% endfor %}
+      {% else %}
+      - будь-які
+      {% endif %}
+
+      **Карти для зарахування:**
+      {% set cards = state_attr('sensor.binance_p2p_usdt_uah_sell_best_price', 'active_card_filter') %}
+      {% if cards %}
+      {% for c in cards %}
+      - {{ c }}
+      {% endfor %}
+      {% else %}
+      - будь-які
+      {% endif %}
+    card_mod:
+      style: |
+        ha-card {
+          background: rgba(255,255,255,0.05) !important;
+          border: 1px solid rgba(255,255,255,0.07) !important;
+          border-radius: 14px !important;
+          backdrop-filter: blur(12px) !important;
+        }
