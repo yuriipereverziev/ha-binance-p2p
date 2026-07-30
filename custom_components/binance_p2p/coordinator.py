@@ -29,6 +29,7 @@ _LOGGER = logging.getLogger(__name__)
 
 HISTORY_STORAGE_VERSION = 1
 HISTORY_WINDOW = timedelta(hours=24)
+STATE_STORAGE_VERSION = 1
 
 
 class BinanceP2PCoordinator(DataUpdateCoordinator[list[dict[str, Any]]]):
@@ -70,12 +71,25 @@ class BinanceP2PCoordinator(DataUpdateCoordinator[list[dict[str, Any]]]):
         # Rolling 24h history of the top-of-book offer at each poll, used
         # for the "top offers (24h)" sensor. Persisted to disk (one file
         # per config entry) so a HA restart doesn't wipe the day's data -
-        # loaded via async_load_history(), which __init__.py awaits before
-        # the first refresh.
-        self._store: Store[list[dict[str, Any]]] = Store(
+        # loaded via async_load_persisted_state(), which __init__.py awaits
+        # before the first refresh.
+        self._history_store: Store[list[dict[str, Any]]] = Store(
             hass, HISTORY_STORAGE_VERSION, f"{DOMAIN}_history_{entry.entry_id}"
         )
         self._history: list[dict[str, Any]] = []
+
+        # desired_amount is also persisted here (separately from the number
+        # entity's own RestoreEntity state). Reason: the coordinator's
+        # first refresh runs during __init__.py's async_setup_entry, before
+        # platforms (and the number entity's async_added_to_hass restore)
+        # are ever set up - so relying on the entity to restore the value
+        # meant every HA restart recorded one history snapshot with
+        # desired_amount back at its 0/no-filter default, polluting the
+        # 24h top-offers list with offers that don't actually match the
+        # user's amount. Loading it here first closes that gap.
+        self._state_store: Store[dict[str, Any]] = Store(
+            hass, STATE_STORAGE_VERSION, f"{DOMAIN}_state_{entry.entry_id}"
+        )
 
         super().__init__(
             hass,
@@ -84,11 +98,21 @@ class BinanceP2PCoordinator(DataUpdateCoordinator[list[dict[str, Any]]]):
             update_interval=timedelta(seconds=scan_interval),
         )
 
-    async def async_load_history(self) -> None:
-        """Load persisted 24h history from disk. Call before first refresh."""
-        stored = await self._store.async_load()
-        self._history = stored or []
+    async def async_load_persisted_state(self) -> None:
+        """Load persisted history and desired_amount. Call before first refresh."""
+        stored_history = await self._history_store.async_load()
+        self._history = stored_history or []
         self._prune_history()
+
+        stored_state = await self._state_store.async_load()
+        if stored_state and "desired_amount" in stored_state:
+            self.desired_amount = stored_state["desired_amount"]
+
+    async def async_save_desired_amount(self, value: float) -> None:
+        """Update desired_amount, persist it, and refresh dependent entities."""
+        self.desired_amount = value
+        await self._state_store.async_save({"desired_amount": value})
+        self.async_update_listeners()
 
     def _prune_history(self) -> None:
         cutoff = datetime.now(timezone.utc) - HISTORY_WINDOW
@@ -174,7 +198,7 @@ class BinanceP2PCoordinator(DataUpdateCoordinator[list[dict[str, Any]]]):
         best = self._pick_best(offers)
         if best is not None:
             self._record_snapshot(best)
-            await self._store.async_save(self._history)
+            await self._history_store.async_save(self._history)
 
         return offers
 

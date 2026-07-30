@@ -70,13 +70,12 @@ class BinanceP2PDesiredAmountNumber(NumberEntity, RestoreEntity):
     async def async_added_to_hass(self) -> None:
         """Restore the last value across HA restarts (0 = no filter).
 
-        This runs after the coordinator's first refresh (during platform
-        setup), so the price sensor's initial state was already computed
-        with the coordinator's default desired_amount (0/no filter). Just
-        setting the restored value here isn't enough - CoordinatorEntity
-        only re-renders when the coordinator notifies its listeners, so
-        without this call the sensor would keep showing the unfiltered
-        offer until the next manual change or scheduled poll.
+        As of the coordinator's own desired_amount persistence (see
+        coordinator.py), this mainly matters as a one-time migration path
+        for entries that already had a value saved via RestoreEntity from
+        before that existed - on every restart after that, the coordinator
+        loads its own persisted value before this even runs. Still safe to
+        keep: if the two ever disagree, use the entity's value.
         """
         await super().async_added_to_hass()
         last_state = await self.async_get_last_state()
@@ -90,8 +89,7 @@ class BinanceP2PDesiredAmountNumber(NumberEntity, RestoreEntity):
             except ValueError:
                 return
             if restored != self._coordinator.desired_amount:
-                self._coordinator.desired_amount = restored
-                self._coordinator.async_update_listeners()
+                await self._coordinator.async_save_desired_amount(restored)
 
     @property
     def available(self) -> bool:
@@ -108,7 +106,8 @@ class BinanceP2PDesiredAmountNumber(NumberEntity, RestoreEntity):
         """Update the filter and immediately refresh dependent entities.
 
         No new API call is made - this just re-filters the offer list
-        that's already cached in the coordinator.
+        that's already cached in the coordinator. Persisted via the
+        coordinator's own storage (see coordinator.py) so it's available
+        before the next HA restart's first poll, not just restored here.
         """
-        self._coordinator.desired_amount = value
-        self._coordinator.async_update_listeners()
+        await self._coordinator.async_save_desired_amount(value)
