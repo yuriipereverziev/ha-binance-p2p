@@ -124,20 +124,6 @@ class BinanceP2PCoordinator(DataUpdateCoordinator[list[dict[str, Any]]]):
             self._history, key=lambda s: s["price"], reverse=reverse
         )[:n]
 
-    async def _async_update_data(self) -> list[dict[str, Any]]:
-        try:
-            offers = await self.client.async_fetch_offers()
-        except BinanceP2PError as err:
-            raise UpdateFailed(str(err)) from err
-
-        if not offers:
-            raise UpdateFailed("Binance P2P returned no offers for this pair")
-
-        self._record_snapshot(offers[0])
-        await self._store.async_save(self._history)
-
-        return offers
-
     @staticmethod
     def _offer_covers_amount(offer: dict[str, Any], amount: float) -> bool:
         """Check both the advertised limits and the merchant's real surplus.
@@ -155,6 +141,43 @@ class BinanceP2PCoordinator(DataUpdateCoordinator[list[dict[str, Any]]]):
         required_qty = amount / offer["price"]
         return required_qty <= offer["available_amount"]
 
+    def _pick_best(self, offers: list[dict[str, Any]]) -> dict[str, Any] | None:
+        """Pick the best offer from an already-filtered list, honoring
+        ``desired_amount`` (0 = no amount filter, just top-of-book).
+
+        Shared by best_offer() (against the cached self.data) and history
+        recording (against the freshly fetched list, before self.data is
+        updated) so both apply the exact same amount/liquidity logic.
+        """
+        if not offers:
+            return None
+        amount = self.desired_amount
+        if not amount:
+            return offers[0]
+        for offer in offers:
+            if self._offer_covers_amount(offer, amount):
+                return offer
+        return None
+
+    async def _async_update_data(self) -> list[dict[str, Any]]:
+        try:
+            offers = await self.client.async_fetch_offers()
+        except BinanceP2PError as err:
+            raise UpdateFailed(str(err)) from err
+
+        if not offers:
+            raise UpdateFailed("Binance P2P returned no offers for this pair")
+
+        # Record whatever the user would actually see right now - already
+        # respects pay_types/card_types (applied inside async_fetch_offers)
+        # and desired_amount (applied here), not just the raw top-of-book.
+        best = self._pick_best(offers)
+        if best is not None:
+            self._record_snapshot(best)
+            await self._store.async_save(self._history)
+
+        return offers
+
     def best_offer(self) -> dict[str, Any] | None:
         """Return the best offer that can cover ``desired_amount``.
 
@@ -162,18 +185,7 @@ class BinanceP2PCoordinator(DataUpdateCoordinator[list[dict[str, Any]]]):
         top-of-book offer. Filtering happens against the already-cached
         offer list, so changing the amount never triggers a new API call.
         """
-        offers = self.data
-        if not offers:
-            return None
-
-        amount = self.desired_amount
-        if not amount:
-            return offers[0]
-
-        for offer in offers:
-            if self._offer_covers_amount(offer, amount):
-                return offer
-        return None
+        return self._pick_best(self.data or [])
 
     def matching_offers_count(self) -> int:
         """Count offers that can actually cover the current desired amount."""
