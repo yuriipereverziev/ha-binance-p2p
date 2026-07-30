@@ -45,6 +45,9 @@
     "sensor": {
       "best_price": {
         "name": "Лучшая цена"
+      },
+      "top_offers_24h": {
+        "name": "Топ предложений (24ч)"
       }
     },
     "number": {

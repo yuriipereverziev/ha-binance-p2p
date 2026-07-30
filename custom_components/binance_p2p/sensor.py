@@ -24,6 +24,7 @@ from .const import (
     ATTR_ORDER_COUNT,
     ATTR_PAYMENT_METHOD_IDS,
     ATTR_PAYMENT_METHODS,
+    ATTR_TOP_OFFERS_24H,
     CONF_ASSET,
     CONF_FIAT,
     CONF_TRADE_TYPE,
@@ -39,7 +40,12 @@ async def async_setup_entry(
 ) -> None:
     """Set up the Binance P2P sensor from a config entry."""
     coordinator: BinanceP2PCoordinator = hass.data[DOMAIN][entry.entry_id]
-    async_add_entities([BinanceP2PBestPriceSensor(coordinator, entry)])
+    async_add_entities(
+        [
+            BinanceP2PBestPriceSensor(coordinator, entry),
+            BinanceP2PTopOffersSensor(coordinator, entry),
+        ]
+    )
 
 
 class BinanceP2PBestPriceSensor(CoordinatorEntity[BinanceP2PCoordinator], SensorEntity):
@@ -108,3 +114,49 @@ class BinanceP2PBestPriceSensor(CoordinatorEntity[BinanceP2PCoordinator], Sensor
             }
         )
         return attrs
+
+
+class BinanceP2PTopOffersSensor(CoordinatorEntity[BinanceP2PCoordinator], SensorEntity):
+    """Sensor exposing the best price seen in the last 24h and the top 3.
+
+    The state is the best single price observed (so it works with
+    numeric_state automations/history graphs); the full top-3 - with
+    merchant, rating, limits and when it was seen - is in the
+    ``top_offers`` attribute.
+    """
+
+    _attr_has_entity_name = True
+    _attr_translation_key = "top_offers_24h"
+    _attr_icon = "mdi:trophy-outline"
+    _attr_device_class = SensorDeviceClass.MONETARY
+    _attr_suggested_display_precision = 2
+
+    def __init__(self, coordinator: BinanceP2PCoordinator, entry: ConfigEntry) -> None:
+        super().__init__(coordinator)
+        self._entry = entry
+
+        asset = entry.data[CONF_ASSET]
+        fiat = entry.data[CONF_FIAT]
+        trade_type = entry.data[CONF_TRADE_TYPE]
+
+        self._attr_unique_id = f"{entry.entry_id}_top_offers_24h"
+        self._attr_native_unit_of_measurement = fiat
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, entry.entry_id)},
+            "name": f"Binance P2P {asset}/{fiat} {trade_type}",
+            "manufacturer": "Binance (unofficial)",
+            "model": "P2P best price",
+        }
+
+    @property
+    def _top3(self) -> list[dict[str, Any]]:
+        return self.coordinator.top_offers(3)
+
+    @property
+    def native_value(self) -> float | None:
+        top = self._top3
+        return top[0]["price"] if top else None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        return {ATTR_TOP_OFFERS_24H: self._top3}

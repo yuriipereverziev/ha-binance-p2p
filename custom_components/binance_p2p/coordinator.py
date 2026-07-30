@@ -2,12 +2,13 @@
 from __future__ import annotations
 
 import logging
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .api import BinanceP2PClient, BinanceP2PError
@@ -25,6 +26,9 @@ from .const import (
 )
 
 _LOGGER = logging.getLogger(__name__)
+
+HISTORY_STORAGE_VERSION = 1
+HISTORY_WINDOW = timedelta(hours=24)
 
 
 class BinanceP2PCoordinator(DataUpdateCoordinator[list[dict[str, Any]]]):
@@ -63,12 +67,62 @@ class BinanceP2PCoordinator(DataUpdateCoordinator[list[dict[str, Any]]]):
             CONF_DESIRED_AMOUNT, DEFAULT_DESIRED_AMOUNT
         )
 
+        # Rolling 24h history of the top-of-book offer at each poll, used
+        # for the "top offers (24h)" sensor. Persisted to disk (one file
+        # per config entry) so a HA restart doesn't wipe the day's data -
+        # loaded via async_load_history(), which __init__.py awaits before
+        # the first refresh.
+        self._store: Store[list[dict[str, Any]]] = Store(
+            hass, HISTORY_STORAGE_VERSION, f"{DOMAIN}_history_{entry.entry_id}"
+        )
+        self._history: list[dict[str, Any]] = []
+
         super().__init__(
             hass,
             _LOGGER,
             name=DOMAIN,
             update_interval=timedelta(seconds=scan_interval),
         )
+
+    async def async_load_history(self) -> None:
+        """Load persisted 24h history from disk. Call before first refresh."""
+        stored = await self._store.async_load()
+        self._history = stored or []
+        self._prune_history()
+
+    def _prune_history(self) -> None:
+        cutoff = datetime.now(timezone.utc) - HISTORY_WINDOW
+        self._history = [
+            snap
+            for snap in self._history
+            if datetime.fromisoformat(snap["timestamp"]) >= cutoff
+        ]
+
+    def _record_snapshot(self, best: dict[str, Any]) -> None:
+        self._history.append(
+            {
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "price": best["price"],
+                "merchant": best["merchant"],
+                "merchant_rating": best["merchant_rating"],
+                "order_count": best["order_count"],
+                "min_limit": best["min_limit"],
+                "max_limit": best["max_limit"],
+            }
+        )
+        self._prune_history()
+
+    def top_offers(self, n: int = 3) -> list[dict[str, Any]]:
+        """Return the n best snapshots from the last 24h.
+
+        "Best" follows the same direction as the live offer sort: highest
+        price for SELL (we're selling, want more), lowest for BUY (we're
+        buying, want less).
+        """
+        reverse = self.entry.data[CONF_TRADE_TYPE] == "SELL"
+        return sorted(
+            self._history, key=lambda s: s["price"], reverse=reverse
+        )[:n]
 
     async def _async_update_data(self) -> list[dict[str, Any]]:
         try:
@@ -78,6 +132,9 @@ class BinanceP2PCoordinator(DataUpdateCoordinator[list[dict[str, Any]]]):
 
         if not offers:
             raise UpdateFailed("Binance P2P returned no offers for this pair")
+
+        self._record_snapshot(offers[0])
+        await self._store.async_save(self._history)
 
         return offers
 
