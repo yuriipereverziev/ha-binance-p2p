@@ -115,12 +115,27 @@ class BinanceP2PCoordinator(DataUpdateCoordinator[list[dict[str, Any]]]):
         self.async_update_listeners()
 
     def _prune_history(self) -> None:
+        """Drop anything older than the window - and anything malformed.
+
+        Defensive against entries that don't match the expected shape
+        (e.g. a partially-written save, or a leftover from manual editing
+        of the storage file): a single bad entry used to raise KeyError
+        here and take down the entire integration's setup, since this
+        runs before the coordinator's first refresh.
+        """
         cutoff = datetime.now(timezone.utc) - HISTORY_WINDOW
-        self._history = [
-            snap
-            for snap in self._history
-            if datetime.fromisoformat(snap["timestamp"]) >= cutoff
-        ]
+        cleaned: list[dict[str, Any]] = []
+        for snap in self._history:
+            ts = snap.get("timestamp") if isinstance(snap, dict) else None
+            if not ts:
+                continue
+            try:
+                parsed = datetime.fromisoformat(ts)
+            except (TypeError, ValueError):
+                continue
+            if parsed >= cutoff:
+                cleaned.append(snap)
+        self._history = cleaned
 
     def _record_snapshot(self, best: dict[str, Any]) -> None:
         self._history.append(
