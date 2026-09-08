@@ -3,12 +3,14 @@
     "step": {
       "user": {
         "title": "Binance P2P",
-        "description": "Set up tracking of the best Binance P2P offer for a given asset/fiat pair.",
+        "description": "Set up tracking of the best Binance P2P offer for a given asset/fiat pair. You can also set a price-alert range (from/to) here - leave both at 0 to skip it; it's exposed as sensor attributes for use in automations, and can be changed later from the integration's Options.",
         "data": {
           "asset": "Asset (e.g. USDT)",
           "fiat": "Fiat currency (e.g. UAH)",
           "trade_type": "Trade type",
-          "scan_interval": "Update interval (seconds)"
+          "scan_interval": "Update interval (seconds)",
+          "alert_price_from": "Price alert: from",
+          "alert_price_to": "Price alert: to"
         }
       },
       "payment_methods": {
@@ -23,7 +25,8 @@
     "error": {
       "cannot_connect": "Could not fetch data from Binance P2P. Check the asset/fiat pair and your connection.",
       "no_offers": "No offers found for this asset/fiat/trade type combination.",
-      "unknown": "Unexpected error. Check the logs for details."
+      "unknown": "Unexpected error. Check the logs for details.",
+      "invalid_alert_range": "\"To\" must be greater than \"from\" (or leave both at 0 for no range filter)."
     },
     "abort": {
       "already_configured": "This asset/fiat/trade type combination is already configured."
@@ -36,9 +39,14 @@
         "data": {
           "scan_interval": "Update interval (seconds)",
           "pay_types": "Payment methods",
-          "card_types": "Cards for crediting"
+          "card_types": "Cards for crediting",
+          "alert_price_from": "Price alert: from",
+          "alert_price_to": "Price alert: to"
         }
       }
+    },
+    "error": {
+      "invalid_alert_range": "\"To\" must be greater than \"from\" (or leave both at 0 for no range filter)."
     }
   },
   "entity": {

@@ -1,0 +1,81 @@
+# Notify when the Binance P2P sell price rises, but only while it's
+# within the alert range you configured for this integration entry
+# (Settings -> Devices & Services -> Binance P2P -> Configure, or set
+# once during initial setup).
+#
+# Why a template condition instead of `numeric_state: {above, below}`:
+# numeric_state's above/below are fixed at automation-edit time and
+# can't read an entity's attributes. The alert range lives in the
+# integration's config instead, exposed on the sensor as the
+# alert_price_from / alert_price_to attributes - so changing the range
+# is done once in the integration's Options, not by editing every
+# automation that uses it. 0 on either side means "no bound on that
+# side" (matches the integration's own convention).
+#
+# Before using: replace the entity_id below with your own sensor (it's
+# named sensor.<asset>_<fiat>_<trade_type>_best_price), and replace
+# notify.notify with your actual notify service, e.g.
+# notify.mobile_app_<your_device> - a bare notify.notify only works if
+# you have a single default notify target configured.
+
+alias: "Binance P2P — ціна продажу зросла"
+description: >-
+  Сповіщення при зростанні ціни продажу USDT у межах налаштованого
+  діапазону (з урахуванням фільтрів способів оплати)
+triggers:
+  - trigger: state
+    entity_id: sensor.binance_p2p_usdt_uah_sell_best_price
+conditions:
+  # Price actually went up since the previous state (ignore
+  # unknown/unavailable transitions).
+  - condition: template
+    value_template: >
+      {% set old = trigger.from_state.state %}
+      {% set new = trigger.to_state.state %}
+      {{ old not in ['unknown', 'unavailable', none] and
+         new not in ['unknown', 'unavailable', none] and
+         (new | float) > (old | float) }}
+  # New price is inside the configured alert range.
+  - condition: template
+    value_template: >
+      {% set entity = 'sensor.binance_p2p_usdt_uah_sell_best_price' %}
+      {% set new = trigger.to_state.state | float %}
+      {% set alert_from = state_attr(entity, 'alert_price_from') | float(0) %}
+      {% set alert_to = state_attr(entity, 'alert_price_to') | float(0) %}
+      {{ (alert_from == 0 or new > alert_from) and
+         (alert_to == 0 or new < alert_to) }}
+  # Only alert for offers matching the payment/card filters configured
+  # on the integration entry (skipped automatically if no filter is set).
+  - condition: template
+    value_template: >
+      {% set entity = 'sensor.binance_p2p_usdt_uah_sell_best_price' %}
+      {% set active_pay = state_attr(entity, 'active_payment_method_filter') or [] %}
+      {% set active_cards = state_attr(entity, 'active_card_filter') or [] %}
+      {% set offer_ids = state_attr(entity, 'payment_method_ids') or [] %}
+      {{ (active_pay | length == 0 or active_pay | select('in', offer_ids) | list | length > 0)
+         and
+         (active_cards | length == 0 or active_cards | select('in', offer_ids) | list | length > 0) }}
+  # Only during waking hours - adjust or remove as needed.
+  - condition: time
+    after: "09:00:00"
+    before: "21:00:00"
+actions:
+  - action: notify.notify
+    data:
+      title: "📈 Ціна продажу зросла"
+      message: >
+        {% set entity = 'sensor.binance_p2p_usdt_uah_sell_best_price' %}
+        {% set old = trigger.from_state.state | float %}
+        {% set new = trigger.to_state.state | float %}
+        {% set merchant = state_attr(entity, 'merchant') %}
+        {% set rating = (state_attr(entity, 'merchant_rating') or 0) * 100 %}
+        {% set min_l = state_attr(entity, 'min_limit') | round(0) %}
+        {% set max_l = state_attr(entity, 'max_limit') | round(0) %}
+        {% set avail = state_attr(entity, 'available_amount') | round(0) %}
+        {% set active_pay = state_attr(entity, 'active_payment_method_filter') or [] %}
+        {% set active_cards = state_attr(entity, 'active_card_filter') or [] %}
+        Ціна виросла: {{ old }} → {{ new }} грн (+{{ (new - old) | round(2) }})
+        Продавець: {{ merchant }} (⭐ {{ rating | round(1) }}%)
+        Ліміти: {{ min_l }}–{{ max_l }} грн, доступно {{ avail }} USDT
+        Фільтр: {{ (active_pay + active_cards) | join(', ') if (active_pay or active_cards) else 'без обмежень' }}
+mode: single

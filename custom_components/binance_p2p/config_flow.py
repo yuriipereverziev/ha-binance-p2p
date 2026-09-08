@@ -12,12 +12,16 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .api import BinanceP2PClient, BinanceP2PError, async_fetch_payment_methods
 from .const import (
+    CONF_ALERT_PRICE_FROM,
+    CONF_ALERT_PRICE_TO,
     CONF_ASSET,
     CONF_CARD_TYPES,
     CONF_FIAT,
     CONF_PAY_TYPES,
     CONF_SCAN_INTERVAL,
     CONF_TRADE_TYPE,
+    DEFAULT_ALERT_PRICE_FROM,
+    DEFAULT_ALERT_PRICE_TO,
     DEFAULT_SCAN_INTERVAL,
     DEFAULT_TRADE_TYPE,
     DOMAIN,
@@ -27,6 +31,21 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 
+
+def _alert_range_selector() -> selector.NumberSelector:
+    """Shared selector for the alert price range fields.
+
+    0 is the sentinel for "no bound" on that side, so min=0 and the value
+    is left unconstrained above that - the actual from < to check happens
+    separately once both values are known.
+    """
+    return selector.NumberSelector(
+        selector.NumberSelectorConfig(
+            min=0, step=0.01, mode=selector.NumberSelectorMode.BOX
+        )
+    )
+
+
 STEP_USER_SCHEMA = vol.Schema(
     {
         vol.Required(CONF_ASSET, default="USDT"): str,
@@ -35,6 +54,16 @@ STEP_USER_SCHEMA = vol.Schema(
         vol.Optional(CONF_SCAN_INTERVAL, default=DEFAULT_SCAN_INTERVAL): vol.All(
             vol.Coerce(int), vol.Range(min=MIN_SCAN_INTERVAL)
         ),
+        # Price-alert range, asked once at initial setup. Both left at 0
+        # means "no range filter" - automations that read the
+        # alert_price_from/alert_price_to sensor attributes should treat
+        # 0 as "no bound on that side" rather than a literal limit.
+        vol.Optional(
+            CONF_ALERT_PRICE_FROM, default=DEFAULT_ALERT_PRICE_FROM
+        ): _alert_range_selector(),
+        vol.Optional(
+            CONF_ALERT_PRICE_TO, default=DEFAULT_ALERT_PRICE_TO
+        ): _alert_range_selector(),
     }
 )
 
@@ -58,6 +87,14 @@ class BinanceP2PConfigFlow(ConfigFlow, domain=DOMAIN):
             fiat = user_input[CONF_FIAT].strip().upper()
             trade_type = user_input[CONF_TRADE_TYPE]
             scan_interval = user_input[CONF_SCAN_INTERVAL]
+            alert_price_from = float(user_input[CONF_ALERT_PRICE_FROM])
+            alert_price_to = float(user_input[CONF_ALERT_PRICE_TO])
+
+            if (alert_price_from or alert_price_to) and alert_price_to <= alert_price_from:
+                errors["base"] = "invalid_alert_range"
+                return self.async_show_form(
+                    step_id="user", data_schema=STEP_USER_SCHEMA, errors=errors
+                )
 
             unique_id = f"{asset}_{fiat}_{trade_type}".lower()
             await self.async_set_unique_id(unique_id)
@@ -88,6 +125,8 @@ class BinanceP2PConfigFlow(ConfigFlow, domain=DOMAIN):
                         CONF_FIAT: fiat,
                         CONF_TRADE_TYPE: trade_type,
                         CONF_SCAN_INTERVAL: scan_interval,
+                        CONF_ALERT_PRICE_FROM: alert_price_from,
+                        CONF_ALERT_PRICE_TO: alert_price_to,
                     }
 
                     # Best-effort: fetch Binance's own list of payment
@@ -188,12 +227,27 @@ class BinanceP2POptionsFlow(OptionsFlow):
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> Any:
+        errors: dict[str, str] = {}
+
         if user_input is not None:
-            return self.async_create_entry(title="", data=user_input)
+            alert_price_from = float(user_input.get(CONF_ALERT_PRICE_FROM, 0))
+            alert_price_to = float(user_input.get(CONF_ALERT_PRICE_TO, 0))
+            if (alert_price_from or alert_price_to) and alert_price_to <= alert_price_from:
+                errors["base"] = "invalid_alert_range"
+            else:
+                return self.async_create_entry(title="", data=user_input)
 
         current_interval = self._entry.options.get(
             CONF_SCAN_INTERVAL,
             self._entry.data.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL),
+        )
+        current_alert_from = self._entry.options.get(
+            CONF_ALERT_PRICE_FROM,
+            self._entry.data.get(CONF_ALERT_PRICE_FROM, DEFAULT_ALERT_PRICE_FROM),
+        )
+        current_alert_to = self._entry.options.get(
+            CONF_ALERT_PRICE_TO,
+            self._entry.data.get(CONF_ALERT_PRICE_TO, DEFAULT_ALERT_PRICE_TO),
         )
 
         # Best-effort: fetch the live payment-method list so the user picks
@@ -229,6 +283,12 @@ class BinanceP2POptionsFlow(OptionsFlow):
             vol.Required(CONF_SCAN_INTERVAL, default=current_interval): vol.All(
                 vol.Coerce(int), vol.Range(min=MIN_SCAN_INTERVAL)
             ),
+            vol.Optional(
+                CONF_ALERT_PRICE_FROM, default=current_alert_from
+            ): _alert_range_selector(),
+            vol.Optional(
+                CONF_ALERT_PRICE_TO, default=current_alert_to
+            ): _alert_range_selector(),
         }
 
         if self._pay_type_options:
@@ -255,4 +315,6 @@ class BinanceP2POptionsFlow(OptionsFlow):
                 )
             )
 
-        return self.async_show_form(step_id="init", data_schema=vol.Schema(schema_dict))
+        return self.async_show_form(
+            step_id="init", data_schema=vol.Schema(schema_dict), errors=errors
+        )

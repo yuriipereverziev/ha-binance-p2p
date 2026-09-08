@@ -9,6 +9,8 @@ CONF_PAY_TYPES = "pay_types"
 CONF_CARD_TYPES = "card_types"
 CONF_SCAN_INTERVAL = "scan_interval"
 CONF_DESIRED_AMOUNT = "desired_amount"
+CONF_ALERT_PRICE_FROM = "alert_price_from"
+CONF_ALERT_PRICE_TO = "alert_price_to"
 
 DEFAULT_SCAN_INTERVAL = 60  # seconds
 MIN_SCAN_INTERVAL = 60  # seconds - lower values risk rate-limiting/bans by Binance
@@ -18,6 +20,11 @@ DEFAULT_ROWS = 10
 DEFAULT_DESIRED_AMOUNT = 0
 NUMBER_MAX_AMOUNT = 1_000_000_000
 NUMBER_STEP_AMOUNT = 100
+# 0/0 = no price-alert range configured - automations relying on the
+# alert_price_from/alert_price_to attributes should treat that as "no
+# range filter" rather than a literal 0..0 window.
+DEFAULT_ALERT_PRICE_FROM = 0
+DEFAULT_ALERT_PRICE_TO = 0
 
 TRADE_TYPES = ["BUY", "SELL"]
 
@@ -40,3 +47,5 @@ ATTR_MATCHING_OFFERS = "matching_offers_count"
 ATTR_ACTIVE_PAY_TYPES = "active_payment_method_filter"
 ATTR_ACTIVE_CARD_TYPES = "active_card_filter"
 ATTR_TOP_OFFERS_24H = "top_offers"
+ATTR_ALERT_PRICE_FROM = "alert_price_from"
+ATTR_ALERT_PRICE_TO = "alert_price_to"

@@ -13,6 +13,8 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .const import (
     ATTR_ACTIVE_CARD_TYPES,
     ATTR_ACTIVE_PAY_TYPES,
+    ATTR_ALERT_PRICE_FROM,
+    ATTR_ALERT_PRICE_TO,
     ATTR_AVAILABLE_AMOUNT,
     ATTR_DESIRED_AMOUNT,
     ATTR_LAST_UPDATED,
@@ -25,9 +27,13 @@ from .const import (
     ATTR_PAYMENT_METHOD_IDS,
     ATTR_PAYMENT_METHODS,
     ATTR_TOP_OFFERS_24H,
+    CONF_ALERT_PRICE_FROM,
+    CONF_ALERT_PRICE_TO,
     CONF_ASSET,
     CONF_FIAT,
     CONF_TRADE_TYPE,
+    DEFAULT_ALERT_PRICE_FROM,
+    DEFAULT_ALERT_PRICE_TO,
     DOMAIN,
 )
 from .coordinator import BinanceP2PCoordinator
@@ -96,6 +102,19 @@ class BinanceP2PBestPriceSensor(CoordinatorEntity[BinanceP2PCoordinator], Sensor
             ATTR_MATCHING_OFFERS: self.coordinator.matching_offers_count(),
             ATTR_ACTIVE_PAY_TYPES: self.coordinator.pay_types,
             ATTR_ACTIVE_CARD_TYPES: self.coordinator.card_types,
+            # Price-alert range chosen at setup (editable later via
+            # Options). 0 on either side means "no bound there" - exposed
+            # as attributes so automations can reference the user's
+            # configured range instead of hardcoding numbers in the
+            # automation YAML.
+            ATTR_ALERT_PRICE_FROM: self._entry.options.get(
+                CONF_ALERT_PRICE_FROM,
+                self._entry.data.get(CONF_ALERT_PRICE_FROM, DEFAULT_ALERT_PRICE_FROM),
+            ),
+            ATTR_ALERT_PRICE_TO: self._entry.options.get(
+                CONF_ALERT_PRICE_TO,
+                self._entry.data.get(CONF_ALERT_PRICE_TO, DEFAULT_ALERT_PRICE_TO),
+            ),
         }
         if not offer:
             return attrs
