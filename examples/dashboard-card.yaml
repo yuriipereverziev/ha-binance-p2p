@@ -128,22 +128,6 @@ cards:
       - {{ m }}
 
       {% endfor %}
-
-
-      ---
-
-      {% set ent = 'sensor.binance_p2p_usdt_uah_sell_best_price' %}
-      {% set last = as_timestamp(state_attr(ent, 'last_updated')) %}
-      {% set interval = state_attr(ent, 'scan_interval') | int(60) %}
-      {% set remaining = (last + interval - as_timestamp(now())) | int %}
-      {% if remaining < 0 %}{% set remaining = 0 %}{% endif %}
-      {% set mins = remaining // 60 %}
-      {% set secs = remaining % 60 %}
-
-      _Обновлено: {{ last | timestamp_custom('%H:%M:%S') }}_
-
-      _Следующее обновление через: **{{ '%d:%02d' | format(mins, secs) }}**_
-      _(интервал {{ interval }} сек)_
     card_mod:
       style: |
         ha-card {
@@ -153,6 +137,50 @@ cards:
           backdrop-filter: blur(12px) !important;
 
         }
+  # Живой таймер до следующего обновления (тикает каждую секунду).
+  # Нужен custom:button-card (HACS → Frontend → button-card).
+  - type: custom:button-card
+    entity: sensor.binance_p2p_usdt_uah_sell_best_price
+    show_icon: true
+    show_name: false
+    show_state: false
+    show_label: true
+    icon: mdi:timer-outline
+    triggers_update: all
+    variables:
+      interval: '[[[ return entity.attributes.scan_interval || 60; ]]]'
+    label: |
+      [[[
+        const lastIso = entity.attributes.last_updated;
+        const interval = entity.attributes.scan_interval || 60;
+        if (!lastIso) return 'ожидание данных…';
+        const last = new Date(lastIso).getTime();
+        const remaining = Math.max(0, Math.floor((last + interval * 1000 - Date.now()) / 1000));
+        const m = Math.floor(remaining / 60);
+        const s = remaining % 60;
+        const pad = (n) => String(n).padStart(2, '0');
+        const updated = new Date(lastIso).toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+        return `Обновлено: ${updated}\nСледующее через: ${m}:${pad(s)}  (каждые ${interval} сек)`;
+      ]]]
+    styles:
+      card:
+        - background: rgba(255,255,255,0.05)
+        - border: 1px solid rgba(255,255,255,0.07)
+        - border-radius: 14px
+        - backdrop-filter: blur(12px)
+        - padding: 12px
+      icon:
+        - color: var(--primary-color)
+        - width: 28px
+      label:
+        - font-size: 13px
+        - justify-self: start
+        - text-align: left
+        - white-space: pre-wrap
+        - color: var(--primary-text-color)
+      grid:
+        - grid-template-areas: '"i l"'
+        - grid-template-columns: 40px 1fr
   - type: markdown
     content: |
       **🔎 Активний фільтр**
