@@ -56,6 +56,9 @@
       },
       "top_offers_24h": {
         "name": "Top offers (24h)"
+      },
+      "next_update": {
+        "name": "Next update"
       }
     },
     "number": {
