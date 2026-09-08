@@ -7,7 +7,6 @@ from typing import Any
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -24,18 +23,20 @@ from .const import (
     ATTR_MERCHANT,
     ATTR_MERCHANT_RATING,
     ATTR_MIN_LIMIT,
-    ATTR_NEXT_UPDATE,
     ATTR_ORDER_COUNT,
     ATTR_PAYMENT_METHOD_IDS,
     ATTR_PAYMENT_METHODS,
+    ATTR_SCAN_INTERVAL,
     ATTR_TOP_OFFERS_24H,
     CONF_ALERT_PRICE_FROM,
     CONF_ALERT_PRICE_TO,
     CONF_ASSET,
     CONF_FIAT,
+    CONF_SCAN_INTERVAL,
     CONF_TRADE_TYPE,
     DEFAULT_ALERT_PRICE_FROM,
     DEFAULT_ALERT_PRICE_TO,
+    DEFAULT_SCAN_INTERVAL,
     DOMAIN,
 )
 from .coordinator import BinanceP2PCoordinator
@@ -52,7 +53,6 @@ async def async_setup_entry(
         [
             BinanceP2PBestPriceSensor(coordinator, entry),
             BinanceP2PTopOffersSensor(coordinator, entry),
-            BinanceP2PNextUpdateSensor(coordinator, entry),
         ]
     )
 
@@ -100,32 +100,38 @@ class BinanceP2PBestPriceSensor(CoordinatorEntity[BinanceP2PCoordinator], Sensor
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         offer = self._best_offer
+        # Prefer the coordinator's actual last successful poll time so the
+        # countdown in the dashboard is accurate; fall back to "now" only
+        # if the coordinator has never reported a success timestamp yet.
+        last_ts = self.coordinator.last_update_success_timestamp
+        if last_ts is not None:
+            last_updated = last_ts.isoformat()
+        else:
+            last_updated = datetime.now(timezone.utc).isoformat()
+
+        scan_interval = (
+            int(self.coordinator.update_interval.total_seconds())
+            if self.coordinator.update_interval
+            else self._entry.options.get(
+                CONF_SCAN_INTERVAL,
+                self._entry.data.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL),
+            )
+        )
+
         attrs: dict[str, Any] = {
             ATTR_DESIRED_AMOUNT: self.coordinator.desired_amount,
             ATTR_MATCHING_OFFERS: self.coordinator.matching_offers_count(),
             ATTR_ACTIVE_PAY_TYPES: self.coordinator.pay_types,
             ATTR_ACTIVE_CARD_TYPES: self.coordinator.card_types,
+            ATTR_SCAN_INTERVAL: scan_interval,
+            ATTR_LAST_UPDATED: last_updated,
             # Price-alert range chosen at setup (editable later via
             # Options). 0 on either side means "no bound there" - exposed
             # as attributes so automations can reference the user's
             # configured range instead of hardcoding numbers in the
             # automation YAML.
-            ATTR_ALERT_PRICE_FROM: self._entry.options.get(
-                CONF_ALERT_PRICE_FROM,
-                self._entry.data.get(CONF_ALERT_PRICE_FROM, DEFAULT_ALERT_PRICE_FROM),
-            ),
-            ATTR_ALERT_PRICE_TO: self._entry.options.get(
-                CONF_ALERT_PRICE_TO,
-                self._entry.data.get(CONF_ALERT_PRICE_TO, DEFAULT_ALERT_PRICE_TO),
-            ),
-            # Timestamp of the next scheduled poll, so dashboards/automations
-            # can show a countdown without hardcoding the scan_interval that
-            # was chosen at setup - it's read straight off the coordinator's
-            # own update_interval, so it always matches whatever's currently
-            # configured (initial setup or a later change via Options).
-            ATTR_NEXT_UPDATE: (
-                datetime.now(timezone.utc) + self.coordinator.update_interval
-            ).isoformat(),
+            ATTR_ALERT_PRICE_FROM: self.coordinator.alert_price_from,
+            ATTR_ALERT_PRICE_TO: self.coordinator.alert_price_to,
         }
         if not offer:
             return attrs
@@ -140,7 +146,6 @@ class BinanceP2PBestPriceSensor(CoordinatorEntity[BinanceP2PCoordinator], Sensor
                 ATTR_PAYMENT_METHODS: offer["payment_methods"],
                 ATTR_PAYMENT_METHOD_IDS: offer["payment_method_ids"],
                 ATTR_AVAILABLE_AMOUNT: offer["available_amount"],
-                ATTR_LAST_UPDATED: datetime.now(timezone.utc).isoformat(),
             }
         )
         return attrs
@@ -190,42 +195,3 @@ class BinanceP2PTopOffersSensor(CoordinatorEntity[BinanceP2PCoordinator], Sensor
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         return {ATTR_TOP_OFFERS_24H: self._top3}
-
-
-class BinanceP2PNextUpdateSensor(CoordinatorEntity[BinanceP2PCoordinator], SensorEntity):
-    """Timestamp of the next scheduled poll.
-
-    device_class TIMESTAMP so the HA frontend renders and live-ticks it as
-    "in X seconds/minutes" on its own (entities/tile cards use
-    ha-relative-time for this) - a Lovelace template computing a countdown
-    from ``last_updated`` would only re-render on entity/minute changes,
-    which is too coarse for a scan_interval that can be as low as 60s.
-    """
-
-    _attr_has_entity_name = True
-    _attr_translation_key = "next_update"
-    _attr_icon = "mdi:timer-sand"
-    _attr_device_class = SensorDeviceClass.TIMESTAMP
-    _attr_entity_category = EntityCategory.DIAGNOSTIC
-
-    def __init__(self, coordinator: BinanceP2PCoordinator, entry: ConfigEntry) -> None:
-        super().__init__(coordinator)
-
-        asset = entry.data[CONF_ASSET]
-        fiat = entry.data[CONF_FIAT]
-        trade_type = entry.data[CONF_TRADE_TYPE]
-
-        self._attr_unique_id = f"{entry.entry_id}_next_update"
-        self._attr_device_info = {
-            "identifiers": {(DOMAIN, entry.entry_id)},
-            "name": f"Binance P2P {asset}/{fiat} {trade_type}",
-            "manufacturer": "Binance (unofficial)",
-            "model": "P2P best price",
-        }
-
-    @property
-    def native_value(self) -> datetime | None:
-        # Evaluated only when the coordinator actually pushes a new state
-        # (CoordinatorEntity doesn't poll on its own), so "now" here is
-        # effectively "the moment of the poll that just completed".
-        return datetime.now(timezone.utc) + self.coordinator.update_interval

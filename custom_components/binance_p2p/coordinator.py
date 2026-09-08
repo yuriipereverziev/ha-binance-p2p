@@ -13,6 +13,8 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 
 from .api import BinanceP2PClient, BinanceP2PError
 from .const import (
+    CONF_ALERT_PRICE_FROM,
+    CONF_ALERT_PRICE_TO,
     CONF_ASSET,
     CONF_CARD_TYPES,
     CONF_DESIRED_AMOUNT,
@@ -20,6 +22,8 @@ from .const import (
     CONF_PAY_TYPES,
     CONF_SCAN_INTERVAL,
     CONF_TRADE_TYPE,
+    DEFAULT_ALERT_PRICE_FROM,
+    DEFAULT_ALERT_PRICE_TO,
     DEFAULT_DESIRED_AMOUNT,
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
@@ -96,6 +100,26 @@ class BinanceP2PCoordinator(DataUpdateCoordinator[list[dict[str, Any]]]):
             _LOGGER,
             name=DOMAIN,
             update_interval=timedelta(seconds=scan_interval),
+        )
+
+    @property
+    def alert_price_from(self) -> float:
+        """Lower bound of the configured price alert range (0 = no bound)."""
+        return float(
+            self.entry.options.get(
+                CONF_ALERT_PRICE_FROM,
+                self.entry.data.get(CONF_ALERT_PRICE_FROM, DEFAULT_ALERT_PRICE_FROM),
+            )
+        )
+
+    @property
+    def alert_price_to(self) -> float:
+        """Upper bound of the configured price alert range (0 = no bound)."""
+        return float(
+            self.entry.options.get(
+                CONF_ALERT_PRICE_TO,
+                self.entry.data.get(CONF_ALERT_PRICE_TO, DEFAULT_ALERT_PRICE_TO),
+            )
         )
 
     async def async_load_persisted_state(self) -> None:
@@ -180,21 +204,43 @@ class BinanceP2PCoordinator(DataUpdateCoordinator[list[dict[str, Any]]]):
         required_qty = amount / offer["price"]
         return required_qty <= offer["available_amount"]
 
+    def _offer_in_price_range(self, offer: dict[str, Any]) -> bool:
+        """True if offer price is inside the configured alert range.
+
+        0 on either side means "no bound on that side". Both 0 = no price
+        filter at all (same as before this filter existed).
+        """
+        price = offer.get("price")
+        if not price:
+            return False
+        lo = self.alert_price_from
+        hi = self.alert_price_to
+        if lo and price < lo:
+            return False
+        if hi and price > hi:
+            return False
+        return True
+
+    def _offer_matches(self, offer: dict[str, Any]) -> bool:
+        """Apply both the amount filter and the price-range filter."""
+        if not self._offer_in_price_range(offer):
+            return False
+        amount = self.desired_amount
+        if amount and not self._offer_covers_amount(offer, amount):
+            return False
+        return True
+
     def _pick_best(self, offers: list[dict[str, Any]]) -> dict[str, Any] | None:
-        """Pick the best offer from an already-filtered list, honoring
-        ``desired_amount`` (0 = no amount filter, just top-of-book).
+        """Pick the best offer honoring desired_amount and alert price range.
 
         Shared by best_offer() (against the cached self.data) and history
-        recording (against the freshly fetched list, before self.data is
-        updated) so both apply the exact same amount/liquidity logic.
+        recording (against the freshly fetched list) so both apply the
+        exact same filters the user sees on the dashboard.
         """
         if not offers:
             return None
-        amount = self.desired_amount
-        if not amount:
-            return offers[0]
         for offer in offers:
-            if self._offer_covers_amount(offer, amount):
+            if self._offer_matches(offer):
                 return offer
         return None
 
@@ -209,7 +255,7 @@ class BinanceP2PCoordinator(DataUpdateCoordinator[list[dict[str, Any]]]):
 
         # Record whatever the user would actually see right now - already
         # respects pay_types/card_types (applied inside async_fetch_offers)
-        # and desired_amount (applied here), not just the raw top-of-book.
+        # and desired_amount + alert price range (applied here).
         best = self._pick_best(offers)
         if best is not None:
             self._record_snapshot(best)
@@ -218,18 +264,15 @@ class BinanceP2PCoordinator(DataUpdateCoordinator[list[dict[str, Any]]]):
         return offers
 
     def best_offer(self) -> dict[str, Any] | None:
-        """Return the best offer that can cover ``desired_amount``.
+        """Return the best offer matching desired_amount and price range.
 
-        If ``desired_amount`` is 0 (no filter set), just returns the plain
-        top-of-book offer. Filtering happens against the already-cached
-        offer list, so changing the amount never triggers a new API call.
+        Filtering happens against the already-cached offer list, so
+        changing the amount never triggers a new API call. Price range
+        comes from config/options and is applied on every read.
         """
         return self._pick_best(self.data or [])
 
     def matching_offers_count(self) -> int:
-        """Count offers that can actually cover the current desired amount."""
+        """Count offers that match both amount and price-range filters."""
         offers = self.data or []
-        amount = self.desired_amount
-        if not amount:
-            return len(offers)
-        return sum(1 for o in offers if self._offer_covers_amount(o, amount))
+        return sum(1 for o in offers if self._offer_matches(o))
