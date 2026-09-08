@@ -132,9 +132,18 @@ cards:
 
       ---
 
-      _Обновлено: {{
-      as_timestamp(state_attr('sensor.binance_p2p_usdt_uah_sell_best_price',
-      'last_updated')) | timestamp_custom('%H:%M:%S') }}_
+      {% set ent = 'sensor.binance_p2p_usdt_uah_sell_best_price' %}
+      {% set last = as_timestamp(state_attr(ent, 'last_updated')) %}
+      {% set interval = state_attr(ent, 'scan_interval') | int(60) %}
+      {% set remaining = (last + interval - as_timestamp(now())) | int %}
+      {% if remaining < 0 %}{% set remaining = 0 %}{% endif %}
+      {% set mins = remaining // 60 %}
+      {% set secs = remaining % 60 %}
+
+      _Обновлено: {{ last | timestamp_custom('%H:%M:%S') }}_
+
+      _Следующее обновление через: **{{ '%d:%02d' | format(mins, secs) }}**_
+      _(интервал {{ interval }} сек)_
     card_mod:
       style: |
         ha-card {

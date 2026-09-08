@@ -26,14 +26,17 @@ from .const import (
     ATTR_ORDER_COUNT,
     ATTR_PAYMENT_METHOD_IDS,
     ATTR_PAYMENT_METHODS,
+    ATTR_SCAN_INTERVAL,
     ATTR_TOP_OFFERS_24H,
     CONF_ALERT_PRICE_FROM,
     CONF_ALERT_PRICE_TO,
     CONF_ASSET,
     CONF_FIAT,
+    CONF_SCAN_INTERVAL,
     CONF_TRADE_TYPE,
     DEFAULT_ALERT_PRICE_FROM,
     DEFAULT_ALERT_PRICE_TO,
+    DEFAULT_SCAN_INTERVAL,
     DOMAIN,
 )
 from .coordinator import BinanceP2PCoordinator
@@ -97,11 +100,31 @@ class BinanceP2PBestPriceSensor(CoordinatorEntity[BinanceP2PCoordinator], Sensor
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         offer = self._best_offer
+        # Prefer the coordinator's actual last successful poll time so the
+        # countdown in the dashboard is accurate; fall back to "now" only
+        # if the coordinator has never reported a success timestamp yet.
+        last_ts = self.coordinator.last_update_success_timestamp
+        if last_ts is not None:
+            last_updated = last_ts.isoformat()
+        else:
+            last_updated = datetime.now(timezone.utc).isoformat()
+
+        scan_interval = (
+            int(self.coordinator.update_interval.total_seconds())
+            if self.coordinator.update_interval
+            else self._entry.options.get(
+                CONF_SCAN_INTERVAL,
+                self._entry.data.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL),
+            )
+        )
+
         attrs: dict[str, Any] = {
             ATTR_DESIRED_AMOUNT: self.coordinator.desired_amount,
             ATTR_MATCHING_OFFERS: self.coordinator.matching_offers_count(),
             ATTR_ACTIVE_PAY_TYPES: self.coordinator.pay_types,
             ATTR_ACTIVE_CARD_TYPES: self.coordinator.card_types,
+            ATTR_SCAN_INTERVAL: scan_interval,
+            ATTR_LAST_UPDATED: last_updated,
             # Price-alert range chosen at setup (editable later via
             # Options). 0 on either side means "no bound there" - exposed
             # as attributes so automations can reference the user's
@@ -129,7 +152,6 @@ class BinanceP2PBestPriceSensor(CoordinatorEntity[BinanceP2PCoordinator], Sensor
                 ATTR_PAYMENT_METHODS: offer["payment_methods"],
                 ATTR_PAYMENT_METHOD_IDS: offer["payment_method_ids"],
                 ATTR_AVAILABLE_AMOUNT: offer["available_amount"],
-                ATTR_LAST_UPDATED: datetime.now(timezone.utc).isoformat(),
             }
         )
         return attrs
