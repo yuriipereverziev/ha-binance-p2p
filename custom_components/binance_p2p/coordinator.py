@@ -9,7 +9,10 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.storage import Store
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from homeassistant.helpers.update_coordinator import (
+    TimestampDataUpdateCoordinator,
+    UpdateFailed,
+)
 
 from .api import BinanceP2PClient, BinanceP2PError
 from .const import (
@@ -36,8 +39,14 @@ HISTORY_WINDOW = timedelta(hours=24)
 STATE_STORAGE_VERSION = 1
 
 
-class BinanceP2PCoordinator(DataUpdateCoordinator[list[dict[str, Any]]]):
-    """Coordinates polling of the Binance P2P offer list for one config entry."""
+class BinanceP2PCoordinator(TimestampDataUpdateCoordinator[list[dict[str, Any]]]):
+    """Coordinates polling of the Binance P2P offer list for one config entry.
+
+    Subclasses TimestampDataUpdateCoordinator (not the plain
+    DataUpdateCoordinator) specifically so ``last_update_success_time`` is
+    tracked for us and can be read from the sensor - see sensor.py's
+    "next update" countdown attributes.
+    """
 
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
         self.entry = entry

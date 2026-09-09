@@ -103,7 +103,7 @@ class BinanceP2PBestPriceSensor(CoordinatorEntity[BinanceP2PCoordinator], Sensor
         # Prefer the coordinator's actual last successful poll time so the
         # countdown in the dashboard is accurate; fall back to "now" only
         # if the coordinator has never reported a success timestamp yet.
-        last_ts = self.coordinator.last_update_success_timestamp
+        last_ts = self.coordinator.last_update_success_time
         if last_ts is not None:
             last_updated = last_ts.isoformat()
         else:
