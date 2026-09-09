@@ -175,17 +175,57 @@ class BinanceP2PCoordinator(DataUpdateCoordinator[list[dict[str, Any]]]):
         )
         self._prune_history()
 
+    def _snapshot_matches_current_filters(self, snap: dict[str, Any]) -> bool:
+        """Re-check a stored history snapshot against the filters as they
+        are configured *right now* (not as they were when it was recorded).
+
+        This is what makes top_offers() live: changing the alert price
+        range or desired amount immediately hides now-stale entries from
+        the displayed top-3, instead of waiting for them to age out of the
+        24h window on their own.
+
+        Note: snapshots don't store available_amount, so the amount check
+        here is limited to min/max limit (unlike the live liquidity check
+        in _offer_covers_amount) - good enough to hide obviously
+        non-matching entries without needing to re-fetch anything.
+        """
+        price = snap.get("price")
+        if price is None:
+            return False
+        lo = self.alert_price_from
+        hi = self.alert_price_to
+        if lo and price < lo:
+            return False
+        if hi and price > hi:
+            return False
+
+        amount = self.desired_amount
+        if amount:
+            min_l = snap.get("min_limit")
+            max_l = snap.get("max_limit")
+            if min_l is None or max_l is None:
+                return False
+            if not (min_l <= amount <= max_l):
+                return False
+        return True
+
     def top_offers(self, n: int = 3) -> list[dict[str, Any]]:
-        """Return the n best snapshots from the last 24h.
+        """Return the n best snapshots from the last 24h that still match
+        the *current* filters (price range, amount) - re-checked here, not
+        just at the moment each snapshot was recorded. Otherwise changing
+        the alert range or desired amount would leave old, now-non-matching
+        entries lingering in the displayed top-3 until they age out of the
+        24h window on their own.
 
         "Best" follows the same direction as the live offer sort: highest
         price for SELL (we're selling, want more), lowest for BUY (we're
         buying, want less).
         """
+        matching = [
+            s for s in self._history if self._snapshot_matches_current_filters(s)
+        ]
         reverse = self.entry.data[CONF_TRADE_TYPE] == "SELL"
-        return sorted(
-            self._history, key=lambda s: s["price"], reverse=reverse
-        )[:n]
+        return sorted(matching, key=lambda s: s["price"], reverse=reverse)[:n]
 
     @staticmethod
     def _offer_covers_amount(offer: dict[str, Any], amount: float) -> bool:
