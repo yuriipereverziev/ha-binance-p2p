@@ -65,6 +65,11 @@
       "desired_amount": {
         "name": "Desired amount"
       }
+    },
+    "select": {
+      "active_bank": {
+        "name": "Active bank"
+      }
     }
   }
 }

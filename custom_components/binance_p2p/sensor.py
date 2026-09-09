@@ -29,6 +29,7 @@ from .const import (
     ATTR_PAYMENT_METHOD_IDS,
     ATTR_PAYMENT_METHODS,
     ATTR_SCAN_INTERVAL,
+    ATTR_SELECTED_BANK,
     ATTR_TOP_OFFERS_24H,
     AD_URL_TEMPLATE,
     CONF_ALERT_PRICE_FROM,
@@ -127,6 +128,14 @@ class BinanceP2PBestPriceSensor(CoordinatorEntity[BinanceP2PCoordinator], Sensor
             ATTR_MATCHING_OFFERS: self.coordinator.matching_offers_count(),
             ATTR_ACTIVE_PAY_TYPES: self.coordinator.pay_types,
             ATTR_ACTIVE_CARD_TYPES: self.coordinator.card_types,
+            # The live single-bank pick from the "Active bank" select
+            # entity (select.py), i.e. whatever the user last chose on the
+            # dashboard - None when no extra narrowing is applied beyond
+            # ATTR_ACTIVE_PAY_TYPES above. Exposed so automations (and the
+            # dashboard) can tell *which* bank the current price/state
+            # actually belongs to, since best_offer() is already filtered
+            # down to it server-side - see coordinator._offer_matches.
+            ATTR_SELECTED_BANK: self.coordinator.active_pay_type,
             ATTR_SCAN_INTERVAL: scan_interval,
             ATTR_LAST_UPDATED: last_updated,
             # Price-alert range chosen at setup (editable later via

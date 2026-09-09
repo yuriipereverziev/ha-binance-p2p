@@ -71,6 +71,19 @@ payment-method filter is applied.
   that amount — useful since many top-of-book offers have a limit too low
   for what you want to trade. Changing this value is instant: it re-filters
   the already-cached offer list without polling Binance again.
+- `select.<...>_active_bank` — only created if you restricted payment
+  methods during setup (Options → Payment methods). Lets you narrow the
+  best-price sensor down to one specific bank at a time, right from the
+  dashboard, out of the payment methods you configured. Picking a bank is
+  instant, same as `desired_amount` — no extra Binance request, just a
+  re-filter of the already-cached offer list. The best-price sensor's
+  `selected_bank` attribute mirrors whatever this select entity is
+  currently set to (`null`/missing when set to "Все банки", i.e. no extra
+  narrowing), so automations can tell which bank the current price
+  actually belongs to. See "Notify on a rise, within your configured
+  alert range" below — the example automation also fires a one-off alert
+  the moment you pick a bank here, if its price already falls inside your
+  configured range.
 
 ## Linking to the ad on Binance
 
@@ -112,52 +125,76 @@ automation:
           message: "Best USDT/UAH buy offer just dropped below 42!"
 ```
 
-### Notify on a rise, within your configured alert range
+### Notify on a rise — or on picking a bank — within your configured alert range
 
 This uses the `alert_price_from` / `alert_price_to` attributes (set once
 during setup, editable later in Options) instead of hardcoding a
 threshold in the automation, so changing the range doesn't mean editing
 YAML. `numeric_state`'s `above`/`below` can't read attributes, so the
-range check is a `template` condition instead:
+range check is a `template` condition instead.
+
+It also has **two triggers**: the usual one on the price sensor, and a
+second one on `select.<...>_active_bank` — so picking a bank on the
+dashboard gets you an immediate notification for that bank's price if
+it's already inside your range, instead of waiting for the next price
+move. Both triggers share most of the same conditions (in range? sensor
+actually has an offer?), but `trigger.id` is used to branch the two
+pieces of logic that *don't* apply to both: "price went up" only makes
+sense for the price-sensor trigger, and "ignore the value HA restores
+at startup" only matters for the select trigger.
 
 ```yaml
 automation:
   - alias: "Binance P2P — ціна продажу зросла"
     description: >-
       Сповіщення при зростанні ціни продажу USDT у межах налаштованого
-      діапазону (з урахуванням фільтрів способів оплати)
+      діапазону, а також одразу після вибору банку на дашборді, якщо
+      його ціна вже потрапляє у цей діапазон
     triggers:
       - trigger: state
         entity_id: sensor.binance_p2p_usdt_uah_sell_best_price
+        id: price_update
+      - trigger: state
+        entity_id: select.binance_p2p_usdt_uah_sell_active_bank
+        id: bank_selected
     conditions:
-      # Price actually went up since the previous state
+      # Sensor actually has an offer right now
       - condition: template
         value_template: >
-          {% set old = trigger.from_state.state %}
-          {% set new = trigger.to_state.state %}
-          {{ old not in ['unknown', 'unavailable', none] and
-             new not in ['unknown', 'unavailable', none] and
-             (new | float) > (old | float) }}
-      # New price is within the alert_price_from/alert_price_to range
-      # configured for this entity (0 on either side = no bound there)
+          {{ states('sensor.binance_p2p_usdt_uah_sell_best_price')
+             not in ['unknown', 'unavailable'] }}
+      # price_update only: price actually went up since the previous state
+      - condition: template
+        value_template: >
+          {% if trigger.id == 'price_update' %}
+            {% set old = trigger.from_state.state %}
+            {% set new = trigger.to_state.state %}
+            {{ old not in ['unknown', 'unavailable', none] and
+               new not in ['unknown', 'unavailable', none] and
+               (new | float) > (old | float) }}
+          {% else %}
+            true
+          {% endif %}
+      # bank_selected only: ignore the state HA restores at startup
+      - condition: template
+        value_template: >
+          {% if trigger.id == 'bank_selected' %}
+            {{ trigger.from_state is not none and
+               trigger.from_state.state not in ['unknown', 'unavailable'] }}
+          {% else %}
+            true
+          {% endif %}
+      # Current price (already scoped to whichever bank is selected) is
+      # within the configured alert range - reads the live sensor state
+      # so it works the same for both triggers.
       - condition: template
         value_template: >
           {% set entity = 'sensor.binance_p2p_usdt_uah_sell_best_price' %}
-          {% set new = trigger.to_state.state | float %}
+          {% set price = states(entity) | float(0) %}
           {% set alert_from = state_attr(entity, 'alert_price_from') | float(0) %}
           {% set alert_to = state_attr(entity, 'alert_price_to') | float(0) %}
-          {{ (alert_from == 0 or new > alert_from) and
-             (alert_to == 0 or new < alert_to) }}
-      # Optional: only if the offer matches your payment/card filters
-      - condition: template
-        value_template: >
-          {% set entity = 'sensor.binance_p2p_usdt_uah_sell_best_price' %}
-          {% set active_pay = state_attr(entity, 'active_payment_method_filter') or [] %}
-          {% set active_cards = state_attr(entity, 'active_card_filter') or [] %}
-          {% set offer_ids = state_attr(entity, 'payment_method_ids') or [] %}
-          {{ (active_pay | length == 0 or active_pay | select('in', offer_ids) | list | length > 0)
-             and
-             (active_cards | length == 0 or active_cards | select('in', offer_ids) | list | length > 0) }}
+          {{ (alert_from == 0 or price > alert_from) and
+             (alert_to == 0 or price < alert_to) }}
       # Optional: only during waking hours
       - condition: time
         after: "09:00:00"
@@ -165,27 +202,37 @@ automation:
     actions:
       - action: notify.mobile_app_your_phone
         data:
-          title: "📈 Ціна продажу зросла"
+          title: >-
+            {{ '🏦 Ціна для обраного банку' if trigger.id == 'bank_selected'
+               else '📈 Ціна продажу зросла' }}
           message: >
             {% set entity = 'sensor.binance_p2p_usdt_uah_sell_best_price' %}
-            {% set old = trigger.from_state.state | float %}
-            {% set new = trigger.to_state.state | float %}
+            {% set select_entity = 'select.binance_p2p_usdt_uah_sell_active_bank' %}
+            {% set new = states(entity) | float %}
+            {% set bank = state_attr(entity, 'selected_bank') or states(select_entity) or 'усі банки' %}
             {% set merchant = state_attr(entity, 'merchant') %}
             {% set rating = (state_attr(entity, 'merchant_rating') or 0) * 100 %}
             {% set min_l = state_attr(entity, 'min_limit') | round(0) %}
             {% set max_l = state_attr(entity, 'max_limit') | round(0) %}
             {% set avail = state_attr(entity, 'available_amount') | round(0) %}
-            {% set active_pay = state_attr(entity, 'active_payment_method_filter') or [] %}
-            {% set active_cards = state_attr(entity, 'active_card_filter') or [] %}
+            {% if trigger.id == 'bank_selected' %}
+            Банк: {{ bank }} — поточна ціна {{ new }} грн (у межах діапазону)
+            {% else %}
+            {% set old = trigger.from_state.state | float %}
             Ціна виросла: {{ old }} → {{ new }} грн (+{{ (new - old) | round(2) }})
+            Банк: {{ bank }}
+            {% endif %}
             Продавець: {{ merchant }} (⭐ {{ rating | round(1) }}%)
             Ліміти: {{ min_l }}–{{ max_l }} грн, доступно {{ avail }} USDT
-            Фільтр: {{ (active_pay + active_cards) | join(', ') if (active_pay or active_cards) else 'без обмежень' }}
     mode: single
 ```
 
 A ready-to-copy version of this automation also lives at
 [`examples/price-alert-automation.yaml`](examples/price-alert-automation.yaml).
+If you didn't restrict payment methods during setup, there's no
+`select.<...>_active_bank` entity to trigger on — just delete the
+`bank_selected` trigger and its two dedicated condition branches; the
+`price_update` trigger works standalone.
 
 **What changed compared to hardcoding `above: 47` / `below: 48` in a
 `numeric_state` condition:** that pattern can't reference an entity's

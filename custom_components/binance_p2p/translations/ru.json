@@ -65,6 +65,11 @@
       "desired_amount": {
         "name": "Желаемая сумма"
       }
+    },
+    "select": {
+      "active_bank": {
+        "name": "Активный банк"
+      }
     }
   }
 }
