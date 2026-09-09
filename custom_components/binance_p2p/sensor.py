@@ -13,6 +13,8 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .const import (
     ATTR_ACTIVE_CARD_TYPES,
     ATTR_ACTIVE_PAY_TYPES,
+    ATTR_AD_URL,
+    ATTR_ADV_NO,
     ATTR_ALERT_PRICE_FROM,
     ATTR_ALERT_PRICE_TO,
     ATTR_AVAILABLE_AMOUNT,
@@ -28,6 +30,7 @@ from .const import (
     ATTR_PAYMENT_METHODS,
     ATTR_SCAN_INTERVAL,
     ATTR_TOP_OFFERS_24H,
+    AD_URL_TEMPLATE,
     CONF_ALERT_PRICE_FROM,
     CONF_ALERT_PRICE_TO,
     CONF_ASSET,
@@ -149,6 +152,13 @@ class BinanceP2PBestPriceSensor(CoordinatorEntity[BinanceP2PCoordinator], Sensor
                 ATTR_AVAILABLE_AMOUNT: offer["available_amount"],
             }
         )
+        # adv_no isn't always present (Binance occasionally omits it), so
+        # only add the ad link when we actually have something to point at
+        # - a card bound to a missing/None ad_url attribute is a dead link.
+        adv_no = offer.get("adv_no")
+        if adv_no:
+            attrs[ATTR_ADV_NO] = adv_no
+            attrs[ATTR_AD_URL] = AD_URL_TEMPLATE.format(adv_no=adv_no)
         return attrs
 
 

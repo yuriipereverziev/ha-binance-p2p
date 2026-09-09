@@ -176,6 +176,7 @@ class BinanceP2PCoordinator(TimestampDataUpdateCoordinator[list[dict[str, Any]]]
                 "timestamp": datetime.now(timezone.utc).isoformat(),
                 "price": best["price"],
                 "merchant": best["merchant"],
+                "adv_no": best.get("adv_no"),
                 "merchant_rating": best["merchant_rating"],
                 "order_count": best["order_count"],
                 "min_limit": best["min_limit"],

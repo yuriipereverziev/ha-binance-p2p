@@ -50,3 +50,11 @@ ATTR_ACTIVE_CARD_TYPES = "active_card_filter"
 ATTR_TOP_OFFERS_24H = "top_offers"
 ATTR_ALERT_PRICE_FROM = "alert_price_from"
 ATTR_ALERT_PRICE_TO = "alert_price_to"
+ATTR_ADV_NO = "adv_no"
+ATTR_AD_URL = "ad_url"
+
+# Binance's own link format for opening a specific P2P ad (web, or the app
+# via universal link if installed) - see
+# https://github.com/binance/binance-skills-hub - "provide a direct link
+# to the specific ad using the adNo": https://c2c.binance.com/en/adv?code={adNo}
+AD_URL_TEMPLATE = "https://c2c.binance.com/en/adv?code={adv_no}"

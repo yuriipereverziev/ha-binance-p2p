@@ -145,6 +145,7 @@ class BinanceP2PClient:
 
         return {
             "price": float(adv.get("price", 0)),
+            "adv_no": adv.get("advNo"),
             "payment_method_ids": pay_method_ids,
             "min_limit": float(adv.get("minSingleTransAmount", 0)),
             # dynamicMaxSingleTransAmount reflects the max limited by the

@@ -55,7 +55,15 @@ payment-method filter is applied.
 
 - `sensor.<...>_best_price` — price of the best offer (or the best offer
   that covers the desired amount, see below). Attributes include merchant,
-  limits, rating, payment methods, etc.
+  limits, rating, payment methods, `adv_no` (Binance's ad identifier) and
+  `ad_url` — a direct link to that specific ad on Binance
+  (`https://c2c.binance.com/en/adv?code=<adv_no>`), opens in the app if
+  installed, in the browser otherwise. Not every offer has an `adv_no`
+  from Binance, so the attribute is only present when there's something
+  to link to.
+- `sensor.<...>_next_update` — timestamp of the next scheduled poll
+  (`last successful poll + update interval`). `device_class: timestamp`,
+  so the frontend can render it as relative time on its own.
 - `number.<...>_desired_amount` — the transaction amount you actually want
   to trade. Set to `0` (default) to just see the plain top-of-book offer
   regardless of its limits. Set it to a real amount and the price sensor
@@ -63,6 +71,29 @@ payment-method filter is applied.
   that amount — useful since many top-of-book offers have a limit too low
   for what you want to trade. Changing this value is instant: it re-filters
   the already-cached offer list without polling Binance again.
+
+## Linking to the ad on Binance
+
+The best-price sensor exposes `ad_url`, a direct link to the specific ad
+(`https://c2c.binance.com/en/adv?code=<adv_no>`). Don't rely on a
+templated `tap_action`/`url_path` on `mushroom-template-card` for this —
+that's not reliably supported across its versions. A plain `markdown`
+card renders a real clickable link and always works:
+
+```yaml
+- type: markdown
+  content: >
+    {% set url = state_attr('sensor.binance_p2p_usdt_uah_sell_best_price', 'ad_url') %}
+    {% if url %}
+    🔗 [View this ad on Binance]({{ url }})
+    {% else %}
+    _No ad link available_
+    {% endif %}
+```
+
+See `examples/dashboard-card.yaml` for this wired into the full dashboard,
+including per-entry links in the "Top 3 (24h)" list (via each snapshot's
+`adv_no`).
 
 ## Example automations
 

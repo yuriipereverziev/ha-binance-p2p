@@ -126,6 +126,29 @@ cards:
                     border-radius: 14px !important;
                     backdrop-filter: blur(12px) !important;
                   }
+        # Реальна клікабельна лінк-картка (не templated tap_action на
+        # mushroom-card - це ненадійно та може не спрацювати в різних
+        # версіях картки). markdown-картка рендерить справжній <a href>,
+        # тож "Переглянути оголошення" відкриває конкретне оголошення на
+        # Binance (у браузері, або в застосунку, якщо він встановлений і
+        # налаштований на universal link).
+        - type: markdown
+          content: >
+            {% set url = state_attr('sensor.binance_p2p_usdt_uah_sell_best_price', 'ad_url') %}
+            {% if url %}
+            🔗 [Переглянути оголошення на Binance]({{ url }})
+            {% else %}
+            _Посилання на оголошення недоступне_
+            {% endif %}
+          card_mod:
+            style: |
+              ha-card {
+                background: rgba(255,255,255,0.05) !important;
+                border: 1px solid rgba(255,255,255,0.07) !important;
+                border-radius: 14px !important;
+                backdrop-filter: blur(12px) !important;
+                text-align: center;
+              }
 
   - type: conditional
     conditions:
@@ -256,8 +279,10 @@ cards:
 
       {% for o in top %}
 
-      **{{ loop.index }}.** {{ o.price }} грн — {{ o.merchant }} (⭐ {{
-      (o.merchant_rating * 100) | round(1) }}%)
+      **{{ loop.index }}.** {{ o.price }} грн — {{ '[' ~ o.merchant ~
+      '](https://c2c.binance.com/en/adv?code=' ~ o.adv_no ~ ')' if
+      o.adv_no else o.merchant }} (⭐ {{ (o.merchant_rating * 100) |
+      round(1) }}%)
 
       _{{ as_timestamp(o.timestamp) | timestamp_custom('%H:%M %d.%m') }}, ліміти
       {{ o.min_limit | round(0) }}–{{ o.max_limit | round(0) }}_
