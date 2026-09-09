@@ -47,6 +47,10 @@ ATTR_DESIRED_AMOUNT = "desired_amount"
 ATTR_MATCHING_OFFERS = "matching_offers_count"
 ATTR_ACTIVE_PAY_TYPES = "active_payment_method_filter"
 ATTR_ACTIVE_CARD_TYPES = "active_card_filter"
+# The live, single-bank pick from the select entity (None = no extra
+# narrowing beyond the configured pay_types/card_types) - distinct from
+# ATTR_ACTIVE_PAY_TYPES above, which reflects the full configured list.
+ATTR_SELECTED_BANK = "selected_bank"
 ATTR_TOP_OFFERS_24H = "top_offers"
 ATTR_ALERT_PRICE_FROM = "alert_price_from"
 ATTR_ALERT_PRICE_TO = "alert_price_to"

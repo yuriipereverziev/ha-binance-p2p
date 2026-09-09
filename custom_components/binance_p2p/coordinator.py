@@ -72,6 +72,13 @@ class BinanceP2PCoordinator(TimestampDataUpdateCoordinator[list[dict[str, Any]]]
             card_types=self.card_types,
         )
 
+        # Live single-bank filter, changed via the "Active bank" select
+        # entity (select.py) - narrows the already-configured pay_types
+        # list down to one bank at a time, applied client-side against the
+        # cached offer list (see _offer_matches). None = no extra
+        # narrowing, i.e. all of the configured pay_types still apply.
+        self.active_pay_type: str | None = None
+
         # Desired transaction amount, used by entities to pick the best
         # offer whose min/max limit actually covers this amount. This is
         # changed live via the "Desired amount" number entity, not via the
@@ -138,13 +145,34 @@ class BinanceP2PCoordinator(TimestampDataUpdateCoordinator[list[dict[str, Any]]]
         self._prune_history()
 
         stored_state = await self._state_store.async_load()
-        if stored_state and "desired_amount" in stored_state:
-            self.desired_amount = stored_state["desired_amount"]
+        if stored_state:
+            if "desired_amount" in stored_state:
+                self.desired_amount = stored_state["desired_amount"]
+            if "active_pay_type" in stored_state:
+                self.active_pay_type = stored_state["active_pay_type"]
+
+    async def _async_save_runtime_state(self) -> None:
+        """Persist both live filters together (a plain overwrite of one key
+        would otherwise wipe the other - the store holds a single dict)."""
+        await self._state_store.async_save(
+            {
+                "desired_amount": self.desired_amount,
+                "active_pay_type": self.active_pay_type,
+            }
+        )
 
     async def async_save_desired_amount(self, value: float) -> None:
         """Update desired_amount, persist it, and refresh dependent entities."""
         self.desired_amount = value
-        await self._state_store.async_save({"desired_amount": value})
+        await self._async_save_runtime_state()
+        self.async_update_listeners()
+
+    async def async_save_active_pay_type(self, value: str | None) -> None:
+        """Update the live single-bank filter, persist it, and refresh
+        dependent entities. No new Binance request - just re-filters the
+        already-cached offer list, same as async_save_desired_amount."""
+        self.active_pay_type = value
+        await self._async_save_runtime_state()
         self.async_update_listeners()
 
     def _prune_history(self) -> None:
@@ -181,6 +209,7 @@ class BinanceP2PCoordinator(TimestampDataUpdateCoordinator[list[dict[str, Any]]]
                 "order_count": best["order_count"],
                 "min_limit": best["min_limit"],
                 "max_limit": best["max_limit"],
+                "payment_method_ids": best.get("payment_method_ids", []),
             }
         )
         self._prune_history()
@@ -216,6 +245,13 @@ class BinanceP2PCoordinator(TimestampDataUpdateCoordinator[list[dict[str, Any]]]
             if min_l is None or max_l is None:
                 return False
             if not (min_l <= amount <= max_l):
+                return False
+
+        if self.active_pay_type:
+            # Snapshots recorded before this field existed have no
+            # payment_method_ids - treat those as non-matching once a bank
+            # filter is active, rather than silently ignoring the filter.
+            if self.active_pay_type not in snap.get("payment_method_ids", []):
                 return False
         return True
 
@@ -272,11 +308,17 @@ class BinanceP2PCoordinator(TimestampDataUpdateCoordinator[list[dict[str, Any]]]
         return True
 
     def _offer_matches(self, offer: dict[str, Any]) -> bool:
-        """Apply both the amount filter and the price-range filter."""
+        """Apply the amount filter, the price-range filter, and (if set)
+        the live single-bank filter."""
         if not self._offer_in_price_range(offer):
             return False
         amount = self.desired_amount
         if amount and not self._offer_covers_amount(offer, amount):
+            return False
+        if (
+            self.active_pay_type
+            and self.active_pay_type not in offer["payment_method_ids"]
+        ):
             return False
         return True
 
