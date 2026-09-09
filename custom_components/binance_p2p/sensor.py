@@ -53,6 +53,7 @@ async def async_setup_entry(
         [
             BinanceP2PBestPriceSensor(coordinator, entry),
             BinanceP2PTopOffersSensor(coordinator, entry),
+            BinanceP2PNextUpdateSensor(coordinator, entry),
         ]
     )
 
@@ -195,3 +196,50 @@ class BinanceP2PTopOffersSensor(CoordinatorEntity[BinanceP2PCoordinator], Sensor
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         return {ATTR_TOP_OFFERS_24H: self._top3}
+
+
+class BinanceP2PNextUpdateSensor(CoordinatorEntity[BinanceP2PCoordinator], SensorEntity):
+    """Sensor exposing the timestamp of the next scheduled poll.
+
+    This is what the "next_update" translation key was reserved for
+    (already present in strings.json/translations, but never actually
+    implemented) - a dashboard card pointed at
+    sensor.<...>_next_update would show "Недоступно"/unavailable
+    because the entity simply didn't exist yet.
+
+    device_class=TIMESTAMP so the frontend can render it as a relative
+    time ("in 42 seconds") on its own - e.g. in a template card:
+    `{{ relative_time(states(entity) | as_datetime) }}`, or with
+    `mdi:timer-sand` for a countdown-style card - without needing a
+    hand-rolled JS countdown against last_updated/scan_interval
+    attributes.
+    """
+
+    _attr_has_entity_name = True
+    _attr_translation_key = "next_update"
+    _attr_icon = "mdi:timer-sand"
+    _attr_device_class = SensorDeviceClass.TIMESTAMP
+
+    def __init__(self, coordinator: BinanceP2PCoordinator, entry: ConfigEntry) -> None:
+        super().__init__(coordinator)
+        self._entry = entry
+
+        asset = entry.data[CONF_ASSET]
+        fiat = entry.data[CONF_FIAT]
+        trade_type = entry.data[CONF_TRADE_TYPE]
+
+        self._attr_unique_id = f"{entry.entry_id}_next_update"
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, entry.entry_id)},
+            "name": f"Binance P2P {asset}/{fiat} {trade_type}",
+            "manufacturer": "Binance (unofficial)",
+            "model": "P2P best price",
+        }
+
+    @property
+    def native_value(self) -> datetime | None:
+        last = self.coordinator.last_update_success_time
+        interval = self.coordinator.update_interval
+        if last is None or interval is None:
+            return None
+        return last + interval
