@@ -223,6 +223,43 @@ cards:
           border-radius: 14px !important;
           backdrop-filter: blur(12px) !important;
         }
+  # Price-alert range, editable straight from the dashboard - e.g. set
+  # "from" to 47 and "to" to 48 to only get notified while the price is
+  # in that window. Changing either value is instant (no extra Binance
+  # request) and immediately feeds price-alert-automation.yaml, which
+  # reads the alert_price_from/alert_price_to attributes off the
+  # best_price sensor below - no need to touch the automation's YAML.
+  # 0 on either side means "no bound on that side".
+  - type: horizontal-stack
+    cards:
+      - type: custom:mushroom-number-card
+        entity: number.binance_p2p_usdt_uah_sell_alert_price_from
+        icon: mdi:arrow-collapse-down
+        primary_info: name
+        secondary_info: none
+        display_mode: buttons
+        card_mod:
+          style: |
+            ha-card {
+              background: rgba(255,255,255,0.05) !important;
+              border: 1px solid rgba(255,255,255,0.07) !important;
+              border-radius: 14px !important;
+              backdrop-filter: blur(12px) !important;
+            }
+      - type: custom:mushroom-number-card
+        entity: number.binance_p2p_usdt_uah_sell_alert_price_to
+        icon: mdi:arrow-collapse-up
+        primary_info: name
+        secondary_info: none
+        display_mode: buttons
+        card_mod:
+          style: |
+            ha-card {
+              background: rgba(255,255,255,0.05) !important;
+              border: 1px solid rgba(255,255,255,0.07) !important;
+              border-radius: 14px !important;
+              backdrop-filter: blur(12px) !important;
+            }
   - type: markdown
     content: >
       **💳 Способы оплаты**

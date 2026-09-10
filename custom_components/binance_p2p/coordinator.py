@@ -88,6 +88,38 @@ class BinanceP2PCoordinator(TimestampDataUpdateCoordinator[list[dict[str, Any]]]
             CONF_DESIRED_AMOUNT, DEFAULT_DESIRED_AMOUNT
         )
 
+        # Live price-alert range, adjustable from the dashboard via the
+        # "Alert price: from/to" number entities (number.py) - same
+        # live/dashboard-adjustable pattern as desired_amount and
+        # active_pay_type above. Changing it re-filters already-cached
+        # data and updates the alert_price_from/alert_price_to
+        # attributes on the best-price sensor instantly, no new Binance
+        # request.
+        #
+        # Seeded here from the config/options flow's alert_price_from/
+        # alert_price_to fields (CONF_ALERT_PRICE_FROM/TO) - that's still
+        # how you set the *initial* range. But once a value has been
+        # saved live (persisted below in _async_save_runtime_state, same
+        # store as desired_amount/active_pay_type), that persisted value
+        # wins on every subsequent load, same as those two. In practice
+        # that means: after you've adjusted the range from the dashboard
+        # even once, editing it again via the integration's Options
+        # screen won't visibly change anything until you also touch the
+        # dashboard sliders - Options is just the starting point, the
+        # dashboard is the day-to-day control.
+        self.alert_price_from: float = float(
+            entry.options.get(
+                CONF_ALERT_PRICE_FROM,
+                entry.data.get(CONF_ALERT_PRICE_FROM, DEFAULT_ALERT_PRICE_FROM),
+            )
+        )
+        self.alert_price_to: float = float(
+            entry.options.get(
+                CONF_ALERT_PRICE_TO,
+                entry.data.get(CONF_ALERT_PRICE_TO, DEFAULT_ALERT_PRICE_TO),
+            )
+        )
+
         # Rolling 24h history of the top-of-book offer at each poll, used
         # for the "top offers (24h)" sensor. Persisted to disk (one file
         # per config entry) so a HA restart doesn't wipe the day's data -
@@ -98,15 +130,16 @@ class BinanceP2PCoordinator(TimestampDataUpdateCoordinator[list[dict[str, Any]]]
         )
         self._history: list[dict[str, Any]] = []
 
-        # desired_amount is also persisted here (separately from the number
-        # entity's own RestoreEntity state). Reason: the coordinator's
-        # first refresh runs during __init__.py's async_setup_entry, before
-        # platforms (and the number entity's async_added_to_hass restore)
-        # are ever set up - so relying on the entity to restore the value
-        # meant every HA restart recorded one history snapshot with
-        # desired_amount back at its 0/no-filter default, polluting the
-        # 24h top-offers list with offers that don't actually match the
-        # user's amount. Loading it here first closes that gap.
+        # desired_amount (and friends) is also persisted here (separately
+        # from each number/select entity's own RestoreEntity state).
+        # Reason: the coordinator's first refresh runs during
+        # __init__.py's async_setup_entry, before platforms (and each
+        # entity's async_added_to_hass restore) are ever set up - so
+        # relying on the entity to restore the value meant every HA
+        # restart recorded one history snapshot with these back at their
+        # config-default values, polluting the 24h top-offers list with
+        # offers that don't actually match the user's current filters.
+        # Loading it here first closes that gap.
         self._state_store: Store[dict[str, Any]] = Store(
             hass, STATE_STORAGE_VERSION, f"{DOMAIN}_state_{entry.entry_id}"
         )
@@ -118,28 +151,8 @@ class BinanceP2PCoordinator(TimestampDataUpdateCoordinator[list[dict[str, Any]]]
             update_interval=timedelta(seconds=scan_interval),
         )
 
-    @property
-    def alert_price_from(self) -> float:
-        """Lower bound of the configured price alert range (0 = no bound)."""
-        return float(
-            self.entry.options.get(
-                CONF_ALERT_PRICE_FROM,
-                self.entry.data.get(CONF_ALERT_PRICE_FROM, DEFAULT_ALERT_PRICE_FROM),
-            )
-        )
-
-    @property
-    def alert_price_to(self) -> float:
-        """Upper bound of the configured price alert range (0 = no bound)."""
-        return float(
-            self.entry.options.get(
-                CONF_ALERT_PRICE_TO,
-                self.entry.data.get(CONF_ALERT_PRICE_TO, DEFAULT_ALERT_PRICE_TO),
-            )
-        )
-
     async def async_load_persisted_state(self) -> None:
-        """Load persisted history and desired_amount. Call before first refresh."""
+        """Load persisted history and live filters. Call before first refresh."""
         stored_history = await self._history_store.async_load()
         self._history = stored_history or []
         self._prune_history()
@@ -150,14 +163,20 @@ class BinanceP2PCoordinator(TimestampDataUpdateCoordinator[list[dict[str, Any]]]
                 self.desired_amount = stored_state["desired_amount"]
             if "active_pay_type" in stored_state:
                 self.active_pay_type = stored_state["active_pay_type"]
+            if "alert_price_from" in stored_state:
+                self.alert_price_from = stored_state["alert_price_from"]
+            if "alert_price_to" in stored_state:
+                self.alert_price_to = stored_state["alert_price_to"]
 
     async def _async_save_runtime_state(self) -> None:
-        """Persist both live filters together (a plain overwrite of one key
-        would otherwise wipe the other - the store holds a single dict)."""
+        """Persist all live filters together (a plain overwrite of one key
+        would otherwise wipe the others - the store holds a single dict)."""
         await self._state_store.async_save(
             {
                 "desired_amount": self.desired_amount,
                 "active_pay_type": self.active_pay_type,
+                "alert_price_from": self.alert_price_from,
+                "alert_price_to": self.alert_price_to,
             }
         )
 
@@ -172,6 +191,21 @@ class BinanceP2PCoordinator(TimestampDataUpdateCoordinator[list[dict[str, Any]]]
         dependent entities. No new Binance request - just re-filters the
         already-cached offer list, same as async_save_desired_amount."""
         self.active_pay_type = value
+        await self._async_save_runtime_state()
+        self.async_update_listeners()
+
+    async def async_save_alert_price_from(self, value: float) -> None:
+        """Update the live lower bound of the alert range, persist it, and
+        refresh dependent entities (the best-price sensor's
+        alert_price_from attribute, and any automation reading it) - same
+        no-extra-request pattern as async_save_desired_amount."""
+        self.alert_price_from = value
+        await self._async_save_runtime_state()
+        self.async_update_listeners()
+
+    async def async_save_alert_price_to(self, value: float) -> None:
+        """Same as async_save_alert_price_from, for the upper bound."""
+        self.alert_price_to = value
         await self._async_save_runtime_state()
         self.async_update_listeners()
 

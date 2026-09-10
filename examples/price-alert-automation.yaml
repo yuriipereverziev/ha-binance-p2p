@@ -1,53 +1,63 @@
-# Notify about the Binance P2P sell price in two situations, both scoped
-# to whichever bank is currently picked on the dashboard (the "Active
-# bank" select entity from select.py) and both gated by the alert range
-# you configured for this integration entry (Settings -> Devices &
-# Services -> Binance P2P -> Configure, or set once during initial
-# setup):
+# Notify about the Binance P2P sell price in three situations, all
+# scoped to whichever bank is currently picked on the dashboard (the
+# "Active bank" select entity from select.py) and all gated by the
+# alert range - which can now be set either once during initial setup /
+# later in Options, or live from the dashboard via the "Alert price:
+# from/to" number entities (number.py, e.g. set "from" to 47 and "to"
+# to 48 to only care about that window):
 #
-#   1. price_update - the price of your currently-selected bank moves
-#      up while already inside your alert range.
-#   2. bank_selected - you pick a different bank on the dashboard and
-#      its current price is already inside your alert range - an
-#      immediate "here's the price for the bank you just picked" ping,
-#      instead of waiting for the next price move.
+#   1. price_update    - the price of your currently-selected bank moves
+#                         up while already inside your alert range.
+#   2. bank_selected    - you pick a different bank on the dashboard and
+#                         its current price is already inside your alert
+#                         range - an immediate "here's the price for the
+#                         bank you just picked" ping, instead of waiting
+#                         for the next price move.
+#   3. range_changed    - you drag the "from"/"to" tiles on the dashboard
+#                         to a new window and the *current* price already
+#                         falls inside it - same idea as bank_selected,
+#                         but for the range instead of the bank.
 #
-# Why this needs two triggers instead of one: the best_price sensor's
-# state already reflects whichever bank is selected (coordinator.py
-# re-filters it instantly, with no extra Binance request), so selecting
-# a bank on the dashboard fires a state_changed event on that sensor
-# just like a real price update does. Treating every such event as a
-# "price went up" alert would misfire - switching from a cheap bank to
-# an expensive one looks identical to a real price rise. Each trigger
-# below gets its own condition branch (matched on trigger.id) so a bank
-# switch is judged as "is the new price in range", not "did it rise".
+# Why this needs three triggers instead of one: the best_price sensor's
+# state (and its alert_price_from/alert_price_to attributes) already
+# reflects whichever bank/range is currently set (coordinator.py
+# re-filters/re-exposes it instantly, with no extra Binance request), so
+# picking a bank OR moving a range slider fires a state_changed event on
+# that sensor just like a real price update does. Treating every such
+# event as a "price went up" alert would misfire - switching bank or
+# range looks identical to a real price rise from a plain old/new
+# comparison. Each trigger below gets its own condition branch (matched
+# on trigger.id) so a bank/range change is judged as "is the current
+# price in range", not "did it rise".
 #
 # Why a template condition instead of `numeric_state: {above, below}`:
 # numeric_state's above/below are fixed at automation-edit time and
-# can't read an entity's attributes. The alert range lives in the
-# integration's config instead, exposed on the sensor as the
-# alert_price_from / alert_price_to attributes - so changing the range
-# is done once in the integration's Options, not by editing every
-# automation that uses it. 0 on either side means "no bound on that
-# side" (matches the integration's own convention).
+# can't read an entity's attributes. The alert range lives on the
+# coordinator instead, exposed on the sensor as the alert_price_from /
+# alert_price_to attributes - so changing the range (from Options, or
+# live from the dashboard tiles) is picked up automatically, no editing
+# this automation's YAML. 0 on either side means "no bound on that side"
+# (matches the integration's own convention).
 #
-# Before using: replace the entity_ids below with your own sensor/select
-# (named sensor.<asset>_<fiat>_<trade_type>_best_price and
-# select.<asset>_<fiat>_<trade_type>_active_bank), and replace
+# Before using: replace the entity_ids below with your own sensor/select/
+# numbers (named sensor.<asset>_<fiat>_<trade_type>_best_price,
+# select.<asset>_<fiat>_<trade_type>_active_bank and
+# number.<asset>_<fiat>_<trade_type>_alert_price_{from,to}), and replace
 # notify.notify with your actual notify service, e.g.
 # notify.mobile_app_<your_device> - a bare notify.notify only works if
 # you have a single default notify target configured.
 #
 # The select trigger only exists if you restricted payment methods
 # during setup (Options -> Payment methods) - see select.py. If you
-# didn't, just delete the "bank_selected" trigger below; the
-# "price_update" one works standalone.
+# didn't, just delete the "bank_selected" trigger below and its two
+# dedicated condition branches; "price_update" and "range_changed" work
+# fine without it.
 
 alias: "Binance P2P — ціна продажу зросла"
 description: >-
   Сповіщення при зростанні ціни продажу USDT у межах налаштованого
-  діапазону, а також одразу після вибору банку на дашборді, якщо його
-  ціна вже потрапляє у цей діапазон
+  діапазону, а також одразу після вибору банку або зміни діапазону на
+  дашборді, якщо поточна ціна вже потрапляє у нього
 triggers:
   - trigger: state
     entity_id: sensor.binance_p2p_usdt_uah_sell_best_price
@@ -55,17 +65,22 @@ triggers:
   - trigger: state
     entity_id: select.binance_p2p_usdt_uah_sell_active_bank
     id: bank_selected
+  - trigger: state
+    entity_id:
+      - number.binance_p2p_usdt_uah_sell_alert_price_from
+      - number.binance_p2p_usdt_uah_sell_alert_price_to
+    id: range_changed
 conditions:
   # Price sensor has an actual offer right now (not unknown/unavailable)
-  # - covers both triggers, since a bank switch can also land on "no
-  # offer for this bank" (sensor goes unknown).
+  # - covers all three triggers, since a bank switch can also land on
+  # "no offer for this bank" (sensor goes unknown).
   - condition: template
     value_template: >
       {{ states('sensor.binance_p2p_usdt_uah_sell_best_price')
          not in ['unknown', 'unavailable'] }}
   # price_update branch: only alert if the price actually went up since
   # the previous state (ignore unknown/unavailable transitions, and
-  # skip this check entirely for the bank_selected branch).
+  # skip this check entirely for the other two branches).
   - condition: template
     value_template: >
       {% if trigger.id == 'price_update' %}
@@ -77,24 +92,24 @@ conditions:
       {% else %}
         true
       {% endif %}
-  # bank_selected branch: ignore the very first state HA restores at
-  # startup (from_state None/unknown/unavailable) - that's not the user
-  # actually picking a bank, and skip this check entirely for the
-  # price_update branch.
+  # bank_selected / range_changed branches: ignore the very first state
+  # HA restores at startup (from_state None/unknown/unavailable) - that's
+  # not the user actually picking a bank or dragging a slider, and skip
+  # this check entirely for the price_update branch.
   - condition: template
     value_template: >
-      {% if trigger.id == 'bank_selected' %}
+      {% if trigger.id in ['bank_selected', 'range_changed'] %}
         {{ trigger.from_state is not none and
            trigger.from_state.state not in ['unknown', 'unavailable'] }}
       {% else %}
         true
       {% endif %}
-  # Current price (already scoped to whichever bank is selected, or all
-  # configured banks if none is) is inside the configured alert range.
-  # Reads the *current* sensor state rather than trigger.to_state.state
-  # so this works the same for both triggers - for bank_selected, the
-  # price sensor has already been re-filtered to the new bank by the
-  # time this condition runs.
+  # Current price (already scoped to whichever bank/range is currently
+  # set) is inside the configured alert range. Reads the *current*
+  # sensor state/attributes rather than trigger.to_state.state so this
+  # works the same for all three triggers - for bank_selected and
+  # range_changed, the price sensor has already been re-filtered/
+  # re-exposed by the time this condition runs.
   - condition: template
     value_template: >
       {% set entity = 'sensor.binance_p2p_usdt_uah_sell_best_price' %}
@@ -113,6 +128,8 @@ actions:
       title: >-
         {% if trigger.id == 'bank_selected' %}
           🏦 Ціна для обраного банку
+        {% elif trigger.id == 'range_changed' %}
+          🎯 Ціна вже у новому діапазоні
         {% else %}
           📈 Ціна продажу зросла
         {% endif %}
@@ -121,13 +138,18 @@ actions:
         {% set select_entity = 'select.binance_p2p_usdt_uah_sell_active_bank' %}
         {% set new = states(entity) | float %}
         {% set bank = state_attr(entity, 'selected_bank') or states(select_entity) or 'усі банки' %}
+        {% set alert_from = state_attr(entity, 'alert_price_from') | float(0) %}
+        {% set alert_to = state_attr(entity, 'alert_price_to') | float(0) %}
         {% set merchant = state_attr(entity, 'merchant') %}
         {% set rating = (state_attr(entity, 'merchant_rating') or 0) * 100 %}
         {% set min_l = state_attr(entity, 'min_limit') | round(0) %}
         {% set max_l = state_attr(entity, 'max_limit') | round(0) %}
         {% set avail = state_attr(entity, 'available_amount') | round(0) %}
         {% if trigger.id == 'bank_selected' %}
-        Банк: {{ bank }} — поточна ціна {{ new }} грн (у межах діапазону)
+        Банк: {{ bank }} — поточна ціна {{ new }} грн (у межах {{ alert_from }}–{{ alert_to }})
+        {% elif trigger.id == 'range_changed' %}
+        Діапазон: {{ alert_from }}–{{ alert_to }} грн — поточна ціна {{ new }} грн вже підходить
+        Банк: {{ bank }}
         {% else %}
         {% set old = trigger.from_state.state | float %}
         Ціна виросла: {{ old }} → {{ new }} грн (+{{ (new - old) | round(2) }})

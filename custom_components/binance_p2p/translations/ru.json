@@ -64,6 +64,12 @@
     "number": {
       "desired_amount": {
         "name": "Желаемая сумма"
+      },
+      "alert_price_from": {
+        "name": "Диапазон оповещения: от"
+      },
+      "alert_price_to": {
+        "name": "Диапазон оповещения: до"
       }
     },
     "select": {

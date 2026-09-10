@@ -64,6 +64,12 @@
     "number": {
       "desired_amount": {
         "name": "Desired amount"
+      },
+      "alert_price_from": {
+        "name": "Alert price: from"
+      },
+      "alert_price_to": {
+        "name": "Alert price: to"
       }
     },
     "select": {
