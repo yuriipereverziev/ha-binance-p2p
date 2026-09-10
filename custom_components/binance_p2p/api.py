@@ -7,7 +7,12 @@ from typing import Any
 
 import aiohttp
 
-from .const import BINANCE_P2P_TRADE_METHODS_URL, BINANCE_P2P_URL, DEFAULT_ROWS
+from .const import (
+    BINANCE_P2P_TRADE_METHODS_URL,
+    BINANCE_P2P_URL,
+    DEFAULT_ROWS,
+    PER_PAY_TYPE_ROWS,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -68,18 +73,84 @@ class BinanceP2PClient:
         defensively in case that ever changes.
         """
         # Binance's own payTypes filter is OR-based (matches offers
-        # supporting ANY of the given identifiers), so we send it the union
-        # of both conditions to avoid over-filtering server-side, then
-        # enforce the real AND-between-groups logic ourselves below.
-        server_pay_types = list(set(self._pay_types) | set(self._card_types))
+        # supporting ANY of the given identifiers) AND the result is
+        # capped at `rows` (DEFAULT_ROWS) total, ranked by price across
+        # ALL of those identifiers combined - not per identifier. With
+        # more than one identifier configured, whichever bank happens to
+        # be the most price-competitive right now can fill the entire
+        # window, leaving zero results for a less competitive (but
+        # perfectly real) bank you also configured - e.g. PrivatBank
+        # offers outprice Monobank ones and take all 10 slots, so
+        # picking Monobank client-side afterwards finds nothing even
+        # though Monobank ads do exist further down Binance's book.
+        #
+        # So: with more than one identifier, query each one separately
+        # (in parallel) with a small `rows` each, guaranteeing every
+        # configured bank/card gets a fair shot at being represented in
+        # the cached data - not just the market leader. With 0 or 1
+        # identifiers there's nothing to starve each other, so a single
+        # combined request is enough (and cheaper).
+        all_types = sorted(set(self._pay_types) | set(self._card_types))
 
+        if len(all_types) > 1:
+            results = await asyncio.gather(
+                *(self._fetch_page([t], PER_PAY_TYPE_ROWS) for t in all_types),
+                return_exceptions=True,
+            )
+            raw_items: list[dict[str, Any]] = []
+            seen_adv_no: set[str] = set()
+            errors: list[BaseException] = []
+            for result in results:
+                if isinstance(result, BaseException):
+                    errors.append(result)
+                    continue
+                for item in result:
+                    adv_no = item.get("adv", {}).get("advNo")
+                    if adv_no and adv_no in seen_adv_no:
+                        continue
+                    if adv_no:
+                        seen_adv_no.add(adv_no)
+                    raw_items.append(item)
+            # Only give up if every single per-bank request failed - a
+            # transient error on one bank's request shouldn't sink data
+            # for the others that did succeed.
+            if errors and len(errors) == len(results):
+                raise BinanceP2PError(
+                    f"Error connecting to Binance P2P: {errors[0]}"
+                ) from errors[0]
+        else:
+            raw_items = await self._fetch_page(all_types, self._rows)
+
+        offers = [self._normalize(item) for item in raw_items]
+
+        if self._pay_types:
+            offers = [
+                o for o in offers
+                if set(o["payment_method_ids"]) & set(self._pay_types)
+            ]
+        if self._card_types:
+            offers = [
+                o for o in offers
+                if set(o["payment_method_ids"]) & set(self._card_types)
+            ]
+
+        reverse = self._trade_type == "SELL"
+        offers.sort(key=lambda o: o["price"], reverse=reverse)
+        return offers
+
+    async def _fetch_page(
+        self, pay_types: list[str], rows: int
+    ) -> list[dict[str, Any]]:
+        """POST one search request to Binance and return the raw `data` list
+        (not yet normalized). Shared by the single-request and the
+        per-identifier fan-out in async_fetch_offers()."""
         payload = {
             "asset": self._asset,
             "fiat": self._fiat,
             "tradeType": self._trade_type,
             "page": 1,
-            "rows": self._rows,
-            "payTypes": server_pay_types,
+            "rows": rows,
+            "payTypes": pay_types,
             "publisherType": None,
         }
 
@@ -107,22 +178,7 @@ class BinanceP2PClient:
         if not data or not data.get("success", True) or "data" not in data:
             raise BinanceP2PError(f"Unexpected response payload: {data}")
 
-        offers = [self._normalize(item) for item in data["data"]]
-
-        if self._pay_types:
-            offers = [
-                o for o in offers
-                if set(o["payment_method_ids"]) & set(self._pay_types)
-            ]
-        if self._card_types:
-            offers = [
-                o for o in offers
-                if set(o["payment_method_ids"]) & set(self._card_types)
-            ]
-
-        reverse = self._trade_type == "SELL"
-        offers.sort(key=lambda o: o["price"], reverse=reverse)
-        return offers
+        return data["data"]
 
     @staticmethod
     def _normalize(item: dict[str, Any]) -> dict[str, Any]:

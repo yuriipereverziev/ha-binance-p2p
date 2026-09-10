@@ -55,6 +55,10 @@ to allow any payment method. If that list can't be fetched (e.g. Binance
 temporarily unreachable), this step is skipped automatically and no
 payment-method filter is applied.
 
+Picking more than one payment method here also changes *how* offers are
+fetched - see "Why does bank X show no results even though it's in the
+list?" below.
+
 ## Entities
 
 - `sensor.<...>_best_price` — price of the best offer (or the best offer
@@ -278,6 +282,27 @@ automation that reads these attributes picks it up, no YAML edits
 needed. Also replace `notify.notify` with your actual notify service
 (e.g. `notify.mobile_app_<your_device>`) — a bare `notify.notify` only
 works if you have a single default notify target configured.
+
+## Why does bank X show no results even though it's in the list?
+
+The payment-method picker (Options → Payment methods) is populated from
+Binance's own real list, so every entry there is a genuinely valid
+identifier - if it wasn't showing results, it wasn't a typo.
+
+The actual cause: when more than one payment method is configured,
+Binance is queried **separately for each one** (in parallel) instead of
+with one combined request. This matters because Binance's search
+endpoint ranks results globally across whatever payment types you send
+it and caps the response at a fixed number of rows - if you'd
+configured e.g. PrivatBank *and* Monobank in one combined query, and
+PrivatBank offers happen to be more price-competitive right now, they'd
+fill the entire response window, leaving zero rows for Monobank even
+though Monobank ads genuinely exist further down Binance's book.
+Querying each configured bank on its own guarantees every one of them
+gets a fair shot at being represented in the cached data - not just
+whichever bank is currently the market leader. A single configured
+payment method (or none) still uses one combined request, same as
+before, so there's no extra cost for the common case.
 
 ## Notes
 

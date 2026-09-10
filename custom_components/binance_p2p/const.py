@@ -16,6 +16,11 @@ DEFAULT_SCAN_INTERVAL = 60  # seconds
 MIN_SCAN_INTERVAL = 60  # seconds - lower values risk rate-limiting/bans by Binance
 DEFAULT_TRADE_TYPE = "BUY"
 DEFAULT_ROWS = 10
+# Used instead of DEFAULT_ROWS when querying Binance separately per
+# payment-method identifier (see api.py's async_fetch_offers) - only
+# need enough rows to find that one identifier's best offer(s), not a
+# full top-10 window per bank.
+PER_PAY_TYPE_ROWS = 5
 # 0 = no filter (show the plain top-of-book offer, regardless of its limits)
 DEFAULT_DESIRED_AMOUNT = 0
 NUMBER_MAX_AMOUNT = 1_000_000_000
